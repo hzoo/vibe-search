@@ -467,7 +467,7 @@ export function App() {
       <div class="max-w-[600px] mx-auto">
         <div class="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-4 py-3 border-b border-gray-100 dark:border-gray-800">
           <div class="flex items-center justify-between mb-4">
-            <h1 class="text-xl font-bold">Tweet Search</h1>
+            <h1 class="text-xl font-bold">Vibes Search</h1>
             <div class="flex items-center gap-2">
               <button
                 onClick={() => showSettings.value = true}

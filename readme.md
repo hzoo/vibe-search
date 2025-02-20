@@ -1,4 +1,4 @@
-# Tweet Search
+# Vibes Search
 
 > For https://github.com/TheExGenesis/community-archive
 > Followed [local setup](https://github.com/TheExGenesis/community-archive/blob/main/docs/local-setup.md)
