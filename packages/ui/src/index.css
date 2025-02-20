@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Define dark mode variant */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Define custom media query */
+@custom-media --dark-mode (prefers-color-scheme: dark);
+
+@media (--dark-mode) {
+    :root {
+      --color-paper: #100F0F;
+      --color-black: #FFFCF0;
+    }
+  }
+  

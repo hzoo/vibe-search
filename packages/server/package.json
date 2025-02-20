@@ -1,0 +1,15 @@
+{
+    "name": "server",
+    "scripts": {
+        "dev": "bun run server.ts",
+        "chroma": "chroma run --path ./tweets",
+        "import": "bun run import-tweets.ts"
+    },
+    "dependencies": {
+        "chromadb": "^1.10.4",
+        "chromadb-default-embed": "^2.13.2"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.2.2"
+    }
+}

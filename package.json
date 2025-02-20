@@ -1,0 +1,15 @@
+{
+  "name": "tweet-embeedings",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "chroma": "bun --filter=server run chroma",
+    "dev": "bun --filter=server run dev",
+    "ui": "bun --filter=ui run dev"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.2"
+  }
+}
