@@ -44,9 +44,7 @@ interface ThreadEmbed {
   text: string;
   metadata: {
     username: string;
-    displayName: string;
     created_at: string;
-    id: string;
   };
 }
 
@@ -260,9 +258,7 @@ function buildThreads(tweets: Tweet[]) {
       .trim(),
     metadata: {
       username: thread[0].user?.username || '',
-      displayName: thread[0].user?.displayName || '',
       created_at: thread[0].created_at,
-      id: thread[0].id,
     }
   }));
 }

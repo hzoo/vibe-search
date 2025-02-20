@@ -3,3 +3,4 @@ node_modules
 getting-started
 tweet-archives
 tweets
+.env

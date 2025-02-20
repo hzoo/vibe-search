@@ -53,9 +53,8 @@ const server = serve({
           text: doc || "",
           distance: results.distances?.[0]?.[i] || 0,
           username: results.metadatas?.[0]?.[i]?.username || "",
-          displayName: results.metadatas?.[0]?.[i]?.displayName || "",
           date: results.metadatas?.[0]?.[i]?.created_at || "",
-          id: results.metadatas?.[0]?.[i]?.id || "",
+          id: results.ids?.[0]?.[i] || "",
         }));
 
         return Response.json(simplifiedResults, {
