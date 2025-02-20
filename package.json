@@ -8,7 +8,7 @@
     "chroma": "bun --filter=server run chroma",
     "dev": "bun --filter=server run dev",
     "ui": "bun --filter=ui run dev",
-    "import-tweets": "bun --filter=server run import-tweets"
+    "import-tweets": "bun --filter=server run import"
   },
   "devDependencies": {
     "@types/bun": "^1.2.2"
