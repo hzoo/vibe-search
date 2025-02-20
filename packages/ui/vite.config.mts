@@ -9,5 +9,8 @@ export default defineConfig({
     alias: [
       { find: '@', replacement: resolve(__dirname, '..') }
     ]
+  },
+  server: {
+    allowedHosts: ['localhost', '127.0.0.1', 'vibe-search.henryzoo.com']
   }
 }); 

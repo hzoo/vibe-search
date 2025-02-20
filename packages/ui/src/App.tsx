@@ -4,9 +4,13 @@ import { useEffect, useState } from "preact/hooks";
 import { createClient } from '@supabase/supabase-js';
 
 // Supabase setup
-const supabaseUrl = import.meta.env.VITE_LOCAL_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// const supabaseUrl = import.meta.env.VITE_LOCAL_SUPABASE_URL;
+// const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = window.location.hostname === 'localhost' ? import.meta.env.VITE_LOCAL_SUPABASE_URL : import.meta.env.VITE_PUBLIC_SUPABASE_URL;
+const supabaseKey = window.location.hostname === 'localhost' ? import.meta.env.VITE_SUPABASE_ANON_KEY : import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+const embeddingsUrl = window.location.hostname === 'localhost' ? "http://localhost:3001/api/search" : "http://vibe-search-api.henryzoo.com/api/search";
 
 // Cache interface
 type UserData = {
@@ -408,7 +412,7 @@ const handleSearch = async () => {
   loading.value = true;
   error.value = null;
   try {
-    const response = await fetch("http://localhost:3001/api/search", {
+    const response = await fetch(embeddingsUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

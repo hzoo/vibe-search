@@ -4,3 +4,4 @@ getting-started
 tweet-archives
 tweets
 .env
+.DS_Store
