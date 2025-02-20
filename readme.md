@@ -14,6 +14,17 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv python install
 # https://docs.trychroma.com/docs/overview/getting-started?lang=typescript
 uv tool install chromadb
+
+# supabase (need Docker)
+# dashboard: http://localhost:54323
+bunx supabase login
+bunx supabase start
+```
+
+```bash
+# add to ui/.env
+VITE_LOCAL_SUPABASE_URL=http://localhost:54321
+VITE_SUPABASE_ANON_KEY=<anon key>
 ```
 
 ```bash
