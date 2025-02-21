@@ -27,6 +27,7 @@ bun run dev
 bun run ui
 
 # import embeddings with path to tweet archive
+# chroma db folder at packages/server/tweets
 bun run import-tweets tweet-archives/defenderofbasic-archive.json 
 ```
 
