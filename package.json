@@ -1,5 +1,5 @@
 {
-  "name": "tweet-embeedings",
+  "name": "vibe-search",
   "private": true,
   "workspaces": [
     "packages/*"
