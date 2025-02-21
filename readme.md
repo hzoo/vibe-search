@@ -27,7 +27,7 @@ bun run dev
 bun run ui
 
 # import embeddings with path to tweet archive
-bun run import-tweets.ts tweet-archives/defenderofbasic-archive.json 
+bun run import-tweets tweet-archives/defenderofbasic-archive.json 
 ```
 
 ## local supabase (unncessary)

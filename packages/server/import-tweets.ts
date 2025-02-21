@@ -2,7 +2,6 @@
 import { ChromaClient, DefaultEmbeddingFunction } from "chromadb";
 
 const CHUNK_SIZE = 500; // Process fewer tweets at a time
-const NUM_WORKERS = 4;
 
 interface Tweet {
 	id: string;
@@ -113,86 +112,49 @@ async function importTweets() {
 	let errorCount = 0;
 	let processedCount = 0;
 
-	// Create workers
-	const workers = Array.from({ length: NUM_WORKERS }, () => {
-		const worker = new Worker(new URL("./tweet.worker.ts", import.meta.url));
-		worker.addEventListener("error", (error) => {
-			console.error("Worker error:", error);
-		});
-		return worker;
-	});
-
 	// Process tweets in chunks
 	for (let i = 0; i < tweetsData.tweets.length; i += CHUNK_SIZE) {
 		const chunk = tweetsData.tweets.slice(i, i + CHUNK_SIZE);
 		const progress = formatProgress(i, tweetsData.tweets.length);
 		console.log(`\nProcessing chunk ${progress}`);
 
-		// Process this chunk
-		const processedTweets = processTweets(chunk, username, displayName);
-		const threads = buildThreads(processedTweets);
+		try {
+			// Process this chunk
+			const processedTweets = processTweets(chunk, username, displayName);
+			const threads = buildThreads(processedTweets);
 
-		if (threads.length === 0) continue;
+			if (threads.length === 0) continue;
 
-		// Generate embeddings
-		process.stdout.write(
-			`Generating embeddings for ${threads.length} threads... `,
-		);
-		const startTime = performance.now();
-		const embeddings = await embedder.generate(threads.map((t) => t.text));
-		console.log(`done in ${formatTime(performance.now() - startTime)}`);
+			// Generate embeddings for this batch
+			process.stdout.write(
+				`Generating embeddings for ${threads.length} threads... `,
+			);
+			const startTime = performance.now();
+			const embeddings = await embedder.generate(threads.map((t) => t.text));
+			console.log(`done in ${formatTime(performance.now() - startTime)}`);
 
-		// Split threads between workers
-		const workerPromises = Array.from(
-			{ length: NUM_WORKERS },
-			(_, workerIndex) => {
-				const workerThreads = threads.filter(
-					(_, i) => i % NUM_WORKERS === workerIndex,
-				);
-				const workerEmbeddings = embeddings.filter(
-					(_, i) => i % NUM_WORKERS === workerIndex,
-				);
+			// Upsert to collection
+			process.stdout.write("Upserting to collection... ");
+			const upsertStart = performance.now();
+			await collection.upsert({
+				ids: threads.map((t) => t.id),
+				documents: threads.map((t) => t.text),
+				metadatas: threads.map((t) => t.metadata),
+				embeddings,
+			});
+			console.log(`done in ${formatTime(performance.now() - upsertStart)}`);
 
-				if (workerThreads.length === 0) return Promise.resolve();
+			successCount += threads.length;
+			processedCount += threads.length;
+		} catch (error) {
+			errorCount++;
+			console.error("Error processing chunk:", error);
+		}
 
-				return new Promise<void>((resolve, reject) => {
-					const worker = workers[workerIndex];
-
-					worker.onmessage = (event) => {
-						const response = event.data;
-						if (response.success) {
-							successCount += response.count;
-							processedCount += response.count;
-							console.log(
-								`Worker ${workerIndex + 1} completed ${response.count} threads`,
-							);
-						} else {
-							errorCount++;
-							console.error(
-								`Worker ${workerIndex + 1} failed:`,
-								response.error,
-							);
-						}
-						resolve();
-					};
-
-					worker.onerror = reject;
-
-					const batchData: BatchData = {
-						batch: workerThreads,
-						collectionName: collection.name,
-						embeddings: workerEmbeddings,
-					};
-					worker.postMessage(batchData);
-				});
-			},
-		);
-
-		await Promise.all(workerPromises);
+		// Log progress
+		const totalProgress = formatProgress(processedCount, tweetsData.tweets.length);
+		console.log(`Overall progress: ${totalProgress}`);
 	}
-
-	// Clean up workers
-	workers.forEach((worker) => worker.terminate());
 
 	// Verify the import
 	const count = await collection.count();
