@@ -1,7 +1,7 @@
 node_modules
 *.log
 getting-started
-tweet-archives
+archives
 tweets
 .env
 .DS_Store
