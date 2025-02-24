@@ -125,6 +125,7 @@ async function getUserData(
 const query = signal("love");
 const selectedUser = signal<string>("");
 const nResults = signal(10);
+const isDragging = signal(false);
 const results = signal<
 	Array<{
 		text: string;
@@ -142,6 +143,30 @@ const currentDialog = signal<'settings' | 'shortcuts' | null>(null);
 
 // Tweet selection
 const selectedTweetIndex = signal<number>(-1);
+
+// Theme control
+const isDarkMode = signal(document.documentElement.classList.contains('dark'));
+
+function toggleDarkMode() {
+	isDarkMode.value = !isDarkMode.value;
+	document.documentElement.classList.toggle('dark');
+	localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light');
+}
+
+// Track last dialog open time to handle double-press to close
+const lastDialogOpenTime = signal<{ dialog: string; time: number } | null>(null);
+
+function toggleDialog(dialog: 'settings' | 'shortcuts') {
+	const now = Date.now();
+	// If same dialog was opened in last 500ms, close it
+	if (lastDialogOpenTime.value?.dialog === dialog && now - lastDialogOpenTime.value.time < 500) {
+		currentDialog.value = null;
+		lastDialogOpenTime.value = null;
+	} else {
+		currentDialog.value = dialog;
+		lastDialogOpenTime.value = { dialog, time: now };
+	}
+}
 
 function UserSelect() {
 	return (
@@ -235,9 +260,43 @@ function SettingsDialog() {
 	);
 }
 
+// Extract tweet ID from URL
+function extractTweetId(url: string) {
+	const match = url.match(/(?:twitter|x)\.com\/\w+\/status\/(\d+)/);
+	return match ? match[1] : null;
+}
+
 function Input() {
 	return (
-		<div class="relative">
+		<div 
+			class={`relative ${isDragging.value ? 'ring-2 ring-blue-500' : ''}`}
+			onDragOver={(e) => {
+				e.preventDefault();
+				isDragging.value = true;
+			}}
+			onDragLeave={() => {
+				isDragging.value = false;
+			}}
+			onDrop={async (e) => {
+				e.preventDefault();
+				isDragging.value = false;
+				
+				if (!e.dataTransfer) return;
+				const text = e.dataTransfer.getData('text');
+				if (!text) return;
+				
+				const tweetId = extractTweetId(text);
+				if (!tweetId) {
+					error.value = "Please drop a valid tweet URL";
+					return;
+				}
+
+				// For now, just set the URL as the query
+				// TODO: Implement proper tweet fetching once we figure out the API approach
+				query.value = `tweet:${tweetId}`;
+				handleSearch();
+			}}
+		>
 			<div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
@@ -263,7 +322,7 @@ function Input() {
 						handleSearch();
 					}
 				}}
-				placeholder="Search for tweets..."
+				placeholder={isDragging.value ? "Drop tweet URL here..." : "Search for tweets or drop a tweet URL to compare"}
 				class="w-full pl-10 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 			/>
 			{query.value && (
@@ -428,8 +487,8 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 			href={tweetUrl}
 			target="_blank"
 			rel="noopener noreferrer"
-			class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors ${
-				isSelected ? 'bg-gray-50 dark:bg-gray-800/50' : ''
+			class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors outline-none ${
+				isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
 			}`}
 			onClick={(e) => {
 				if (!e.ctrlKey && !e.metaKey) {
@@ -521,6 +580,11 @@ const handleSearch = async () => {
 
 		const json = await response.json();
 		results.value = json;
+		
+		// After search, unfocus input and select first tweet
+		const searchInput = document.querySelector('input[type="text"]') as HTMLInputElement;
+		searchInput?.blur();
+		selectedTweetIndex.value = results.value.length > 0 ? 0 : -1;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : String(err);
 	} finally {
@@ -581,8 +645,8 @@ export function App() {
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
-			// Don't handle shortcuts if input is focused
-			if (e.target instanceof HTMLInputElement) {
+			// Don't handle shortcuts if input is focused, except for Escape
+			if (e.target instanceof HTMLInputElement && e.key !== 'Escape') {
 				return;
 			}
 
@@ -594,15 +658,20 @@ export function App() {
 				) as HTMLInputElement;
 				searchInput?.focus();
 			}
-			// Cmd/Ctrl + , to open settings
+			// Cmd/Ctrl + , to toggle settings
 			if ((e.metaKey || e.ctrlKey) && e.key === ",") {
 				e.preventDefault();
-				currentDialog.value = 'settings';
+				toggleDialog('settings');
 			}
-			// Ctrl + / to open shortcuts
+			// Ctrl + / to toggle shortcuts
 			if ((e.metaKey || e.ctrlKey) && e.key === "/") {
 				e.preventDefault();
-				currentDialog.value = 'shortcuts';
+				toggleDialog('shortcuts');
+			}
+			// Cmd + \ to toggle dark mode
+			if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+				e.preventDefault();
+				toggleDarkMode();
 			}
 			// / to focus search
 			if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
@@ -613,20 +682,20 @@ export function App() {
 				searchInput?.focus();
 			}
 			// j/k for next/previous tweet
-			if (e.key === "j") {
+			if (e.key === "j" || e.key === "k") {
 				e.preventDefault();
-				selectedTweetIndex.value = Math.min(
-					selectedTweetIndex.value + 1,
-					results.value.length - 1
-				);
-				document.querySelectorAll('a[href^="https://x.com"]')[selectedTweetIndex.value]?.scrollIntoView({
-					behavior: 'smooth',
-					block: 'nearest',
-				});
-			}
-			if (e.key === "k") {
-				e.preventDefault();
-				selectedTweetIndex.value = Math.max(selectedTweetIndex.value - 1, 0);
+				if (selectedTweetIndex.value === -1 && results.value.length > 0) {
+					// If no tweet selected, select first one
+					selectedTweetIndex.value = 0;
+				} else {
+					selectedTweetIndex.value = Math.max(
+						0,
+						Math.min(
+							selectedTweetIndex.value + (e.key === "j" ? 1 : -1),
+							results.value.length - 1
+						)
+					);
+				}
 				document.querySelectorAll('a[href^="https://x.com"]')[selectedTweetIndex.value]?.scrollIntoView({
 					behavior: 'smooth',
 					block: 'nearest',
