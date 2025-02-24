@@ -1,6 +1,7 @@
 import { signal, useSignal, useSignalEffect } from "@preact/signals";
 import { ThemeToggle } from "./ThemeToggle";
 import { useEffect, useRef } from "preact/hooks";
+import { memo } from "preact/compat";
 import { createClient } from "@supabase/supabase-js";
 
 // Supabase setup
@@ -284,6 +285,48 @@ function SettingsDialog() {
 	);
 }
 
+const handleSearch = async () => {
+	if (!query.value.trim()) {
+		results.value = []; // Clear results on empty query
+		error.value = null;
+		return;
+	}
+
+	loading.value = true;
+	error.value = null;
+	try {
+		const response = await fetch(embeddingsUrl, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				query: query.value,
+				username: selectedUser.value || undefined,
+				nResults: nResults.value,
+			}),
+		});
+
+		if (!response.ok) {
+			throw new Error(
+				`Search failed: ${response.status} ${response.statusText}`,
+			);
+		}
+
+		const json = await response.json();
+		results.value = json;
+		
+		// After search, unfocus input and select first tweet
+		const searchInput = document.querySelector('input[type="text"]') as HTMLInputElement;
+		searchInput?.blur();
+		selectedTweetIndex.value = results.value.length > 0 ? 0 : -1;
+	} catch (err) {
+		error.value = err instanceof Error ? err.message : String(err);
+	} finally {
+		loading.value = false;
+	}
+};
+
 function Input() {
 	return (
 		<div class="relative">
@@ -306,7 +349,10 @@ function Input() {
 			<input
 				type="text"
 				value={query.value}
-				onInput={(e) => (query.value = e.currentTarget.value)}
+				onInput={(e) => {
+					query.value = e.currentTarget.value;
+					handleSearch();
+				}}
 				onKeyDown={(e) => {
 					if (e.key === "Enter") {
 						handleSearch();
@@ -405,9 +451,9 @@ function Results() {
 	);
 }
 
-const linkify = (text: string) => {
-	const urlRegex = /https?:\/\/[^\s<]+/g; // Updated to avoid matching inside HTML
-	const usernameRegex = /@(\w+)/g; // Simplified username regex
+function linkify(text: string) {
+	const urlRegex = /https?:\/\/[^\s<]+/g;
+	const usernameRegex = /@(\w+)/g;
 
 	// First escape HTML
 	const escapedText = text.replace(
@@ -436,9 +482,9 @@ const linkify = (text: string) => {
 	);
 
 	return replacedText;
-};
+}
 
-const highlightText = (text: string, query: string) => {
+function highlightText(text: string, query: string) {
 	if (!query) return linkify(text);
 
 	const linkedText = linkify(text);
@@ -451,9 +497,9 @@ const highlightText = (text: string, query: string) => {
 		regex,
 		'<mark class="bg-yellow-200 dark:bg-yellow-500 px-0.5 rounded">$1</mark>',
 	);
-};
+}
 
-function Tweet({ result, index }: { result: (typeof results.value)[0]; index: number }) {
+const Tweet = memo(({ result, index }: { result: (typeof results.value)[0]; index: number }) => {
 	const userData = useSignal<UserData | null>(null);
 	const showProfile = useSignal(false);
 	const isSelected = index === selectedTweetIndex.value;
@@ -567,50 +613,7 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 			</div>
 		</a>
 	);
-}
-
-const handleSearch = async () => {
-	if (!query.value.trim()) {
-		results.value = []; // Clear results on empty query
-		error.value = null;
-		return;
-	}
-
-	loading.value = true;
-	error.value = null;
-	try {
-		const response = await fetch(embeddingsUrl, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				query: query.value,
-				username: selectedUser.value || undefined,
-				nResults: nResults.value,
-			}),
-		});
-
-		if (!response.ok) {
-			throw new Error(
-				`Search failed: ${response.status} ${response.statusText}`,
-			);
-		}
-
-		const json = await response.json();
-		results.value = json;
-		
-		// After search, unfocus input and select first tweet
-		const searchInput = document.querySelector('input[type="text"]') as HTMLInputElement;
-		searchInput?.blur();
-		selectedTweetIndex.value = results.value.length > 0 ? 0 : -1;
-	} catch (err) {
-		error.value = err instanceof Error ? err.message : String(err);
-	} finally {
-		loading.value = false;
-	}
-};
-
+});
 
 const shortcuts = [
 	{ key: 'Ctrl + /', description: 'Show keyboard shortcuts' },
@@ -701,7 +704,7 @@ function ProfileHoverCard({ userData, username }: { userData: UserData | null; u
 	);
 }
 
-const handleKeyDown = (e: KeyboardEvent) => {
+function handleKeyDownStable(e: KeyboardEvent) {
 	// Don't handle shortcuts if input is focused, except for Escape
 	if (e.target instanceof HTMLInputElement && e.key !== 'Escape') {
 		return;
@@ -711,10 +714,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	if ((e.metaKey || e.ctrlKey) && e.key === "c" && selectedTweetIndex.value !== -1) {
 		e.preventDefault();
 		const selectedTweet = results.value[selectedTweetIndex.value];
-		navigator.clipboard.writeText(selectedTweet.text).then(() => {
-			// Could add a toast notification here
-			// console.log('Tweet text copied to clipboard');
-		});
+		navigator.clipboard.writeText(selectedTweet.text);
 		return;
 	}
 
@@ -787,14 +787,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
 		const tweetUrl = `https://x.com/${results.value[selectedTweetIndex.value].username}/status/${results.value[selectedTweetIndex.value].id}`;
 		window.open(tweetUrl, '_blank');
 	}
-};
+}
 
 export function App() {
 	useEffect(() => {
 		handleSearch(); // Initial search
 
-		document.addEventListener("keydown", handleKeyDown);
-		return () => document.removeEventListener("keydown", handleKeyDown);
+		document.addEventListener("keydown", handleKeyDownStable);
+		return () => document.removeEventListener("keydown", handleKeyDownStable);
 	}, []);
 
 	return (
