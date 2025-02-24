@@ -131,7 +131,6 @@ async function getUserData(
 const query = signal("love");
 const selectedUser = signal<string>("");
 const nResults = signal(10);
-const isDragging = signal(false);
 const results = signal<
 	Array<{
 		text: string;
@@ -143,15 +142,13 @@ const results = signal<
 >([]);
 const loading = signal(false);
 const error = signal<string | null>(null);
-
 // Dialog control
 const currentDialog = signal<'settings' | 'shortcuts' | null>(null);
-
 // Tweet selection
 const selectedTweetIndex = signal<number>(-1);
-
 // Theme control
 const isDarkMode = signal(document.documentElement.classList.contains('dark'));
+const headerHeight = signal(119);
 
 function toggleDarkMode() {
 	isDarkMode.value = !isDarkMode.value;
@@ -177,6 +174,7 @@ function toggleDialog(dialog: 'settings' | 'shortcuts') {
 function UserSelect() {
 	return (
 		<select
+			id="userFilter"
 			value={selectedUser.value}
 			onChange={(e) => {
 				selectedUser.value = e.currentTarget.value;
@@ -227,10 +225,11 @@ function SettingsDialog() {
 
 				<div class="space-y-4">
 					<div>
-						<label class="block text-sm font-medium mb-1">
+						<label htmlFor="resultsPerSearch" class="block text-sm font-medium mb-1">
 							Results per search
 						</label>
 						<input
+							id="resultsPerSearch"
 							type="number"
 							min="1"
 							max="100"
@@ -246,7 +245,7 @@ function SettingsDialog() {
 					</div>
 
 					<div>
-						<label class="block text-sm font-medium mb-1">Filter by user</label>
+						<label htmlFor="userFilter" class="block text-sm font-medium mb-1">Filter by user</label>
 						<UserSelect />
 					</div>
 
@@ -302,82 +301,40 @@ function extractTweetText(html: string): string {
 
 async function fetchTweetText(tweetId: string): Promise<string | null> {
 	try {
-		const tweetUrl = `https://x.com/i/web/status/${tweetId}`;
-		const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(tweetUrl)}&omit_script=true`;
+		// Use canonical URL format
+		const tweetUrl = `https://twitter.com/i/web/status/${tweetId}`;
+		const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(tweetUrl)}`;
 		
 		console.log('Fetching tweet:', { tweetId, tweetUrl, oembedUrl });
 		
 		const response = await fetch(oembedUrl);
-		const responseText = await response.text();
-		console.log('oEmbed response:', { status: response.status, headers: Object.fromEntries(response.headers), body: responseText });
-		
-		if (!response.ok) {
-			throw new Error(`Failed to fetch tweet: ${response.status} ${response.statusText}\nResponse: ${responseText}`);
-		}
-		
-		let data;
-		try {
-			data = JSON.parse(responseText);
-		} catch (e) {
-			throw new Error(`Invalid JSON response: ${e.message}\nResponse: ${responseText}`);
-		}
+		const data = await response.json();
 		
 		if (!data.html) {
-			throw new Error(`No HTML content in response: ${JSON.stringify(data)}`);
+			throw new Error('No HTML content in oEmbed response');
 		}
 		
-		const text = extractTweetText(data.html);
-		if (!text) {
-			throw new Error(`Could not extract text from HTML: ${data.html}`);
+		// Parse the HTML to extract text
+		const div = document.createElement('div');
+		div.innerHTML = data.html;
+		
+		// Get the tweet text (first p element)
+		const tweetText = div.querySelector('p')?.textContent;
+		if (!tweetText) {
+			throw new Error('Could not find tweet text in HTML');
 		}
 		
-		return text;
+		return tweetText;
 	} catch (err) {
 		console.error('Error fetching tweet:', err);
-		error.value = `Failed to fetch tweet: ${err.message}`;
+		error.value = err instanceof Error ? err.message : 'Failed to fetch tweet';
 		return null;
 	}
 }
 
 function Input() {
 	return (
-		<div 
-			class={`relative ${isDragging.value ? 'ring-2 ring-blue-500' : ''}`}
-			onDragOver={(e) => {
-				e.preventDefault();
-				isDragging.value = true;
-			}}
-			onDragLeave={() => {
-				isDragging.value = false;
-			}}
-			onDrop={async (e) => {
-				e.preventDefault();
-				isDragging.value = false;
-				
-				if (!e.dataTransfer) return;
-				const text = e.dataTransfer.getData('text');
-				if (!text) return;
-				
-				const tweetId = extractTweetId(text);
-				if (!tweetId) {
-					error.value = "Please drop a valid tweet URL";
-					return;
-				}
-
-				loading.value = true;
-				error.value = null;
-
-				const tweetText = await fetchTweetText(tweetId);
-				if (!tweetText) {
-					error.value = "Failed to fetch tweet text. The tweet might be private or deleted.";
-					loading.value = false;
-					return;
-				}
-
-				query.value = tweetText;
-				handleSearch();
-			}}
-		>
+		<div class="relative">
 			<div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
@@ -403,14 +360,14 @@ function Input() {
 						handleSearch();
 					}
 				}}
-				placeholder={isDragging.value ? "Drop tweet URL here..." : "Search for tweets or drop a tweet URL to compare"}
+				placeholder="Search tweets..."
 				class="w-full pl-10 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 			/>
 			{query.value && (
 				<button
 					onClick={() => {
 						query.value = "";
-						handleSearch(); // Clear results
+						handleSearch();
 					}}
 					class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
 					aria-label="Clear search"
@@ -490,7 +447,8 @@ function Results() {
 					<Tweet key={result.id} result={result} index={index} />
 				))}
 			</div>
-			<div class="h-[80vh]" />
+			{/* Add padding at bottom to allow scrolling last tweet to top */}
+			<div class="h-screen" />
 		</div>
 	);
 }
@@ -499,6 +457,7 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 	const userData = useSignal<UserData | null>(null);
 	const showProfile = useSignal(false);
 	const isSelected = index === selectedTweetIndex.value;
+	const imageLoaded = useSignal(false);
 	const tweetRef = useRef<HTMLAnchorElement>(null);
 
 	useSignalEffect(() => {
@@ -516,17 +475,11 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 
 	useEffect(() => {
 		if (isSelected && tweetRef.current) {
-			const rect = tweetRef.current.getBoundingClientRect();
-			const isFullyVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
-			
-			if (!isFullyVisible) {
-				// Calculate position to show tweet at top with padding
-				const targetPosition = window.scrollY + rect.top - 80; // 80px from top
-				window.scrollTo({
-					top: targetPosition,
-					behavior: 'smooth'
-				});
-			}
+			const scrollTop = window.scrollY + tweetRef.current.getBoundingClientRect().top - headerHeight.value;
+			window.scrollTo({
+				top: scrollTop,
+				behavior: 'instant'
+			});
 		}
 	}, [isSelected]);
 
@@ -591,8 +544,8 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 			href={tweetUrl}
 			target="_blank"
 			rel="noopener noreferrer"
-			class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors outline-none ${
-				isSelected ? '[box-shadow:rgb(142,205,248)_0px_0px_0px_2px_inset] dark:bg-blue-900/20' : ''
+			class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors ${
+				isSelected ? 'bg-white [box-shadow:rgb(142,205,248)_0px_0px_0px_2px_inset] dark:bg-blue-900/20' : ''
 			}`}
 			onClick={(e) => {
 				if (!e.ctrlKey && !e.metaKey) {
@@ -613,10 +566,14 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 						onMouseEnter={() => showProfile.value = true}
 						onMouseLeave={() => showProfile.value = false}
 					>
+						{!imageLoaded.value && (
+							<div class="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
+						)}
 						<img
 							src={userData.value?.photo || "/placeholder.png"}
 							alt=""
-							class="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer"
+							onLoad={() => imageLoaded.value = true}
+							class={`w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer ${!imageLoaded.value ? 'hidden' : ''}`}
 						/>
 						{showProfile.value && <ProfileHoverCard userData={userData.value} username={result.username} />}
 					</div>
@@ -702,19 +659,20 @@ const handleSearch = async () => {
 	}
 };
 
+
+const shortcuts = [
+	{ key: 'Ctrl + /', description: 'Show keyboard shortcuts' },
+	{ key: 'Ctrl + ,', description: 'Show settings' },
+	{ key: 'j', description: 'Next tweet' },
+	{ key: 'k', description: 'Previous tweet' },
+	{ key: 'Space', description: 'Page down' },
+	{ key: '/', description: 'Focus search' },
+	{ key: 'Enter', description: 'Open selected tweet' },
+	{ key: 'Esc', description: 'Close dialog' },
+];
+
 function KeyboardShortcutsDialog() {
 	if (currentDialog.value !== 'shortcuts') return null;
-
-	const shortcuts = [
-		{ key: 'Ctrl + /', description: 'Show keyboard shortcuts' },
-		{ key: 'Ctrl + ,', description: 'Show settings' },
-		{ key: 'j', description: 'Next tweet' },
-		{ key: 'k', description: 'Previous tweet' },
-		{ key: 'Space', description: 'Page down' },
-		{ key: '/', description: 'Focus search' },
-		{ key: 'Enter', description: 'Open selected tweet' },
-		{ key: 'Esc', description: 'Close dialog' },
-	];
 
 	return (
 		<div
@@ -791,6 +749,42 @@ function ProfileHoverCard({ userData, username }: { userData: UserData | null; u
 	);
 }
 
+
+const handleDragOver = (e: DragEvent) => {
+	e.preventDefault();
+	e.stopPropagation();
+	if (e.dataTransfer) {
+		e.dataTransfer.dropEffect = 'copy';
+	}
+};
+
+const handleDrop = async (e: DragEvent) => {
+	e.preventDefault();
+	e.stopPropagation();
+
+	const text = e.dataTransfer?.getData('text');
+	if (!text) return;
+
+	// Check if it's a tweet URL
+	const tweetId = extractTweetId(text);
+	if (!tweetId) return;
+
+	loading.value = true;
+	error.value = null;
+
+	try {
+		const tweetText = await fetchTweetText(tweetId);
+		if (tweetText) {
+			query.value = tweetText;
+			await handleSearch();
+		}
+	} catch (err) {
+		error.value = err instanceof Error ? err.message : String(err);
+	} finally {
+		loading.value = false;
+	}
+};
+
 export function App() {
 	useEffect(() => {
 		handleSearch(); // Initial search
@@ -800,6 +794,17 @@ export function App() {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			// Don't handle shortcuts if input is focused, except for Escape
 			if (e.target instanceof HTMLInputElement && e.key !== 'Escape') {
+				return;
+			}
+
+			// Add copy shortcut (Cmd/Ctrl+C)
+			if ((e.metaKey || e.ctrlKey) && e.key === "c" && selectedTweetIndex.value !== -1) {
+				e.preventDefault();
+				const selectedTweet = results.value[selectedTweetIndex.value];
+				navigator.clipboard.writeText(selectedTweet.text).then(() => {
+					// Could add a toast notification here
+					// console.log('Tweet text copied to clipboard');
+				});
 				return;
 			}
 
@@ -879,10 +884,14 @@ export function App() {
 	}, []);
 
 	return (
-		<div class="min-h-screen bg-white dark:bg-gray-900 transition-colors theme-transition dark:text-white">
+		<div 
+			class="min-h-screen bg-white dark:bg-gray-900 transition-colors theme-transition dark:text-white"
+			onDragOver={handleDragOver}
+			onDrop={handleDrop}
+		>
 			<ThemeToggle />
 			<div class="max-w-[600px] mx-auto">
-				<div class="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+				<div class="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-4 py-3 border-b border-gray-100 dark:border-gray-800 shadow-sm">
 					<div class="flex items-center justify-between mb-4">
 						<h1 class="text-xl font-bold">Vibes Search</h1>
 						<div class="flex items-center gap-2">
