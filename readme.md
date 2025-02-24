@@ -1,8 +1,10 @@
-# Vibes Search (local)
+# Vibe Search (local)
 
-> For https://github.com/TheExGenesis/community-archive
-> referenced https://github.com/DefenderOfBasic/twitter-semantic-search/
-> Followed [local setup](https://github.com/TheExGenesis/community-archive/blob/main/docs/local-setup.md)
+![88735](https://github.com/user-attachments/assets/b511ae6b-1c5e-47d9-8845-dd24f441f0d3)
+
+- for: https://github.com/TheExGenesis/community-archive
+- referenced: https://github.com/DefenderOfBasic/twitter-semantic-search.
+- follow: [local setup](https://github.com/TheExGenesis/community-archive/blob/main/docs/local-setup.md). 
 
 ## Setup
 
