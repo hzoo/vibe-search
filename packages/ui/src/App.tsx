@@ -14,7 +14,7 @@ const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
 // 	window.location.hostname === "localhost"
 // 		? import.meta.env.VITE_SUPABASE_ANON_KEY
 // 		: import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = signal(createClient(supabaseUrl, supabaseKey));
 
 const embeddingsUrl =
 	window.location.hostname === "localhost"
@@ -86,7 +86,7 @@ async function getUserData(
 		// Get account data either from hardcoded user or database
 		const { data: account } = hardcodedUser 
 			? { data: { account_id: hardcodedUser.id, account_display_name: hardcodedUser.displayName } }
-			: await supabase
+			: await supabase.value
 				.from("all_account")
 				.select("account_id, account_display_name")
 				.eq("username", result.username)
@@ -98,7 +98,7 @@ async function getUserData(
 		}
 
 		// Then get profile data using account_id
-		const { data: profile } = await supabase
+		const { data: profile } = await supabase.value
 			.from("profile")
 			.select("avatar_media_url, bio, website, location")
 			.eq("account_id", account.account_id)
@@ -149,6 +149,9 @@ const selectedTweetIndex = signal<number>(-1);
 // Theme control
 const isDarkMode = signal(document.documentElement.classList.contains('dark'));
 const headerHeight = signal(119);
+
+// Add this after other signals
+const tempTweet = signal<string | null>(null);
 
 function toggleDarkMode() {
 	isDarkMode.value = !isDarkMode.value;
@@ -288,48 +291,6 @@ function SettingsDialog() {
 function extractTweetId(url: string) {
 	const match = url.match(/(?:twitter|x)\.com\/\w+\/status\/(\d+)/);
 	return match ? match[1] : null;
-}
-
-// Extract tweet text from oEmbed HTML
-function extractTweetText(html: string): string {
-	const div = document.createElement('div');
-	div.innerHTML = html;
-	// Remove "— Username (@username) Date" part
-	const text = div.textContent?.replace(/— .+ \(@.+\) .+$/, '') || '';
-	return text.trim();
-}
-
-async function fetchTweetText(tweetId: string): Promise<string | null> {
-	try {
-		// Use canonical URL format
-		const tweetUrl = `https://twitter.com/i/web/status/${tweetId}`;
-		const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(tweetUrl)}`;
-		
-		console.log('Fetching tweet:', { tweetId, tweetUrl, oembedUrl });
-		
-		const response = await fetch(oembedUrl);
-		const data = await response.json();
-		
-		if (!data.html) {
-			throw new Error('No HTML content in oEmbed response');
-		}
-		
-		// Parse the HTML to extract text
-		const div = document.createElement('div');
-		div.innerHTML = data.html;
-		
-		// Get the tweet text (first p element)
-		const tweetText = div.querySelector('p')?.textContent;
-		if (!tweetText) {
-			throw new Error('Could not find tweet text in HTML');
-		}
-		
-		return tweetText;
-	} catch (err) {
-		console.error('Error fetching tweet:', err);
-		error.value = err instanceof Error ? err.message : 'Failed to fetch tweet';
-		return null;
-	}
 }
 
 function Input() {
@@ -758,6 +719,126 @@ const handleDragOver = (e: DragEvent) => {
 	}
 };
 
+// Add type for window.twttr
+declare global {
+	interface Window {
+		twttr?: {
+			widgets: {
+				createTweet: (
+					tweetId: string,
+					element: HTMLElement,
+					options?: {
+						theme?: 'light' | 'dark';
+						align?: 'left' | 'center' | 'right';
+						width?: number;
+					}
+				) => Promise<HTMLElement>;
+			};
+			ready: (callback: () => void) => void;
+		};
+	}
+}
+
+// Load Twitter script globally once
+const loadTwitterScript = () => {
+	return new Promise<void>((resolve) => {
+		const scriptId = "twitter-wjs";
+		
+		// If already loaded and initialized
+		if (window.twttr?.widgets) {
+			resolve();
+			return;
+		}
+
+		// If loading but not initialized
+		if (window.twttr) {
+			window.twttr.ready(resolve);
+			return;
+		}
+
+		// Start loading
+		if (!document.getElementById(scriptId)) {
+			const script = document.createElement("script");
+			script.id = scriptId;
+			script.src = "https://platform.twitter.com/widgets.js";
+			script.async = true;
+			script.onload = () => window.twttr?.ready(resolve);
+			document.head.appendChild(script);
+		}
+	});
+};
+
+// Load script on app start
+loadTwitterScript();
+
+interface TweetEmbedProps {
+	id: string;
+	onError?: (error: Error) => void;
+}
+
+function TweetEmbed({ id, onError }: TweetEmbedProps) {
+	const containerRef = useRef<HTMLDivElement>(null);
+	const errorSignal = signal<Error | null>(null);
+
+	useSignalEffect(() => {
+		if (!containerRef.current || !window.twttr?.widgets) return;
+
+		window.twttr.widgets
+			.createTweet(id, containerRef.current, {
+				theme: isDarkMode.value ? 'dark' : 'light',
+				width: 550,
+			})
+			.then((el) => {
+				if (!el) {
+					const err = new Error(`Failed to load tweet: ${id}`);
+					errorSignal.value = err;
+					onError?.(err);
+				}
+			})
+			.catch((error: Error) => {
+				errorSignal.value = error;
+				onError?.(error);
+			});
+	});
+
+	if (errorSignal.value) {
+		return (
+			<div class="p-4 text-red-500 dark:text-red-400">
+				Failed to load tweet: {errorSignal.value.message}
+			</div>
+		);
+	}
+
+	return <div ref={containerRef} class="flex justify-center" />;
+}
+
+function TempTweetDisplay() {
+	if (!tempTweet.value) return null;
+
+	return (
+		<div class="fixed bottom-4 right-4 w-[550px] bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+			<div class="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+				<h3 class="font-medium">Tweet Preview</h3>
+				<button
+					onClick={() => tempTweet.value = null}
+					class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+			<div class="p-4">
+				<TweetEmbed 
+					id={tempTweet.value} 
+					onError={(err) => error.value = err.message}
+				/>
+			</div>
+		</div>
+	);
+}
+
+// Update handleDrop function
 const handleDrop = async (e: DragEvent) => {
 	e.preventDefault();
 	e.stopPropagation();
@@ -769,20 +850,8 @@ const handleDrop = async (e: DragEvent) => {
 	const tweetId = extractTweetId(text);
 	if (!tweetId) return;
 
-	loading.value = true;
-	error.value = null;
-
-	try {
-		const tweetText = await fetchTweetText(tweetId);
-		if (tweetText) {
-			query.value = tweetText;
-			await handleSearch();
-		}
-	} catch (err) {
-		error.value = err instanceof Error ? err.message : String(err);
-	} finally {
-		loading.value = false;
-	}
+	// Just show the tweet preview
+	tempTweet.value = tweetId;
 };
 
 export function App() {
@@ -941,6 +1010,7 @@ export function App() {
 			</div>
 			<SettingsDialog />
 			<KeyboardShortcutsDialog />
+			<TempTweetDisplay />
 		</div>
 	);
 }
