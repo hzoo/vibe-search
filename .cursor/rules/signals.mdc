@@ -1,0 +1,11 @@
+---
+description: global state management
+globs: *.ts
+---
+## Signals Usage
+- Top-level signals should use `signal()` from @preact/signals-react
+```typescript
+// ✅ Top level signals (outside components)
+import { signal, type Signal } from "@preact/signals-react";
+const globalCount = signal(0);
+```

@@ -1,0 +1,62 @@
+---
+description: react components
+globs: *.tsx
+---
+## Component Structure
+- Components MUST be declared as function components with PascalCase names
+- All hooks (useEffect, useSignal, etc.) MUST be used inside component functions
+```typescript
+// ❌ BAD - hooks outside component
+const count = useSignal(0);
+useEffect(() => {}, []);
+function app() {} // wrong casing
+
+// ✅ GOOD
+function MyComponent() {
+  const count = useSignal(0);
+  useEffect(() => {}, []);
+  ...
+}
+```
+
+> Prefer preact signals over hooks like useState
+
+## Signals Usage
+- Top-level signals should use `signal()` from @preact/signals-react
+- Component-level signals should use `useSignal()` from @preact/signals
+```typescript
+// ✅ Top level signals (outside components)
+import { signal, type Signal } from "@preact/signals-react";
+const globalCount = signal(0);
+
+// ✅ Component-level signals
+import { useSignal, useComputed, useSignalEffect } from "@preact/signals-react";
+import { useSignals } from "@preact/signals-react/runtime";
+function Counter() {
+  useSignals(); // always add useSignals hook in components if using a signal
+  const count = useSignal(0);
+  const double = useComputed(() => count.value * 2);
+  useSignalEffect(() => {
+	console.log(`Value: ${count.value}, value x 2 = ${double.value}`);
+  });
+
+  return <div>{count}</div>;
+}
+```
+
+## Effect Handling
+- useEffect MUST be inside components
+- Effects should have proper cleanup functions when needed
+- Dependencies array should be properly specified
+```typescript
+// ✅ GOOD
+function MyComponent() {
+  useEffect(() => {
+    const controller = new AbortController();
+    const handler = () => {};
+    window.addEventListener('resize', handler, { signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, []); // Empty deps for mount/unmount only
+}
