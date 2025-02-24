@@ -44,7 +44,7 @@ interface UserCache {
 
 // Load cache from localStorage
 const CACHE_KEY = "tweetSearchUserCache";
-const CACHE_TTL = 1000 * 60 * 60 * 24; // 1 day
+const CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 1 week
 
 function loadCache(): UserCache {
 	try {
@@ -138,7 +138,10 @@ const loading = signal(false);
 const error = signal<string | null>(null);
 
 // Dialog control
-const showSettings = signal(false);
+const currentDialog = signal<'settings' | 'shortcuts' | null>(null);
+
+// Tweet selection
+const selectedTweetIndex = signal<number>(-1);
 
 function UserSelect() {
 	return (
@@ -162,16 +165,24 @@ function UserSelect() {
 
 // Settings Dialog
 function SettingsDialog() {
-	if (!showSettings.value) return null;
+	if (currentDialog.value !== 'settings') return null;
 
 	return (
 		<div
 			class="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50"
 			onClick={(e) => {
 				if (e.target === e.currentTarget) {
-					showSettings.value = false;
+					currentDialog.value = null;
 				}
 			}}
+			onKeyDown={(e) => {
+				if (e.key === 'Escape') {
+					currentDialog.value = null;
+				}
+			}}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Search Settings"
 		>
 			<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-[400px] max-w-[90vw]">
 				<h2 class="text-lg font-bold mb-4">Search Settings</h2>
@@ -205,7 +216,7 @@ function SettingsDialog() {
 				<div class="mt-6 flex justify-end gap-2">
 					<button
 						onClick={() => {
-							showSettings.value = false;
+							currentDialog.value = null;
 							handleSearch();
 						}}
 						class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
@@ -213,7 +224,7 @@ function SettingsDialog() {
 						Apply
 					</button>
 					<button
-						onClick={() => (showSettings.value = false)}
+						onClick={() => (currentDialog.value = null)}
 						class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
 					>
 						Cancel
@@ -334,15 +345,16 @@ function Results() {
 
 	return (
 		<div class="space-y-0">
-			{results.value.map((result) => (
-				<Tweet key={result.id} result={result} />
+			{results.value.map((result, index) => (
+				<Tweet key={result.id} result={result} index={index} />
 			))}
 		</div>
 	);
 }
 
-function Tweet({ result }: { result: (typeof results.value)[0] }) {
+function Tweet({ result, index }: { result: (typeof results.value)[0]; index: number }) {
 	const [userData, setUserData] = useState<UserData | null>(null);
+	const isSelected = index === selectedTweetIndex.value;
 
 	useEffect(() => {
 		// Try to get from cache immediately
@@ -416,7 +428,21 @@ function Tweet({ result }: { result: (typeof results.value)[0] }) {
 			href={tweetUrl}
 			target="_blank"
 			rel="noopener noreferrer"
-			class="block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors"
+			class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors ${
+				isSelected ? 'bg-gray-50 dark:bg-gray-800/50' : ''
+			}`}
+			onClick={(e) => {
+				if (!e.ctrlKey && !e.metaKey) {
+					e.preventDefault();
+					selectedTweetIndex.value = index;
+				}
+			}}
+			onKeyDown={(e) => {
+				if (e.key === 'Enter') {
+					window.open(tweetUrl, '_blank');
+				}
+			}}
+			tabIndex={0}
 		>
 			<div class="flex gap-3">
 				<div class="flex-shrink-0">
@@ -502,6 +528,52 @@ const handleSearch = async () => {
 	}
 };
 
+function KeyboardShortcutsDialog() {
+	if (currentDialog.value !== 'shortcuts') return null;
+
+	const shortcuts = [
+		{ key: 'Ctrl + /', description: 'Show keyboard shortcuts' },
+		{ key: 'Ctrl + ,', description: 'Show settings' },
+		{ key: 'j', description: 'Next tweet' },
+		{ key: 'k', description: 'Previous tweet' },
+		{ key: 'Space', description: 'Page down' },
+		{ key: '/', description: 'Focus search' },
+		{ key: 'Enter', description: 'Open selected tweet' },
+		{ key: 'Esc', description: 'Close dialog' },
+	];
+
+	return (
+		<div
+			class="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50"
+			onClick={(e) => {
+				if (e.target === e.currentTarget) {
+					currentDialog.value = null;
+				}
+			}}
+			onKeyDown={(e) => {
+				if (e.key === 'Escape') {
+					currentDialog.value = null;
+				}
+			}}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Keyboard Shortcuts"
+		>
+			<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-[400px] max-w-[90vw]">
+				<h2 class="text-lg font-bold mb-4">Keyboard Shortcuts</h2>
+				<div class="space-y-2">
+					{shortcuts.map((shortcut) => (
+						<div key={shortcut.key} class="flex justify-between items-center">
+							<span class="text-gray-600 dark:text-gray-300">{shortcut.description}</span>
+							<kbd class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm">{shortcut.key}</kbd>
+						</div>
+					))}
+				</div>
+			</div>
+		</div>
+	);
+}
+
 export function App() {
 	useEffect(() => {
 		handleSearch(); // Initial search
@@ -509,6 +581,11 @@ export function App() {
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
+			// Don't handle shortcuts if input is focused
+			if (e.target instanceof HTMLInputElement) {
+				return;
+			}
+
 			// Cmd/Ctrl + K to focus search
 			if ((e.metaKey || e.ctrlKey) && e.key === "k") {
 				e.preventDefault();
@@ -520,11 +597,52 @@ export function App() {
 			// Cmd/Ctrl + , to open settings
 			if ((e.metaKey || e.ctrlKey) && e.key === ",") {
 				e.preventDefault();
-				showSettings.value = true;
+				currentDialog.value = 'settings';
 			}
-			// Esc to close settings
+			// Ctrl + / to open shortcuts
+			if ((e.metaKey || e.ctrlKey) && e.key === "/") {
+				e.preventDefault();
+				currentDialog.value = 'shortcuts';
+			}
+			// / to focus search
+			if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+				e.preventDefault();
+				const searchInput = document.querySelector(
+					'input[type="text"]',
+				) as HTMLInputElement;
+				searchInput?.focus();
+			}
+			// j/k for next/previous tweet
+			if (e.key === "j") {
+				e.preventDefault();
+				selectedTweetIndex.value = Math.min(
+					selectedTweetIndex.value + 1,
+					results.value.length - 1
+				);
+				document.querySelectorAll('a[href^="https://x.com"]')[selectedTweetIndex.value]?.scrollIntoView({
+					behavior: 'smooth',
+					block: 'nearest',
+				});
+			}
+			if (e.key === "k") {
+				e.preventDefault();
+				selectedTweetIndex.value = Math.max(selectedTweetIndex.value - 1, 0);
+				document.querySelectorAll('a[href^="https://x.com"]')[selectedTweetIndex.value]?.scrollIntoView({
+					behavior: 'smooth',
+					block: 'nearest',
+				});
+			}
+			// Esc to close dialog
 			if (e.key === "Escape") {
-				showSettings.value = false;
+				currentDialog.value = null;
+			}
+			// Space for page down (if no dialog is open)
+			if (e.key === " " && !currentDialog.value) {
+				e.preventDefault();
+				window.scrollBy({
+					top: window.innerHeight * 0.8,
+					behavior: 'smooth',
+				});
 			}
 		};
 
@@ -541,7 +659,17 @@ export function App() {
 						<h1 class="text-xl font-bold">Vibes Search</h1>
 						<div class="flex items-center gap-2">
 							<button
-								onClick={() => (showSettings.value = true)}
+								onClick={() => currentDialog.value = 'shortcuts'}
+								class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+								title="Keyboard Shortcuts (⌘/)"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+									<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
+								</svg>
+							</button>
+							<button
+								onClick={() => currentDialog.value = 'settings'}
 								class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 								title="Search Settings (⌘,)"
 							>
@@ -575,6 +703,7 @@ export function App() {
 				</div>
 			</div>
 			<SettingsDialog />
+			<KeyboardShortcutsDialog />
 		</div>
 	);
 }
