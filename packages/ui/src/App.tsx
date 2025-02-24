@@ -266,6 +266,33 @@ function extractTweetId(url: string) {
 	return match ? match[1] : null;
 }
 
+// Extract tweet text from oEmbed HTML
+function extractTweetText(html: string): string {
+	const div = document.createElement('div');
+	div.innerHTML = html;
+	// Remove "— Username (@username) Date" part
+	const text = div.textContent?.replace(/— .+ \(@.+\) .+$/, '') || '';
+	return text.trim();
+}
+
+async function fetchTweetText(tweetId: string): Promise<string | null> {
+	try {
+		const tweetUrl = `https://x.com/i/web/status/${tweetId}`;
+		const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(tweetUrl)}&omit_script=true`;
+		
+		const response = await fetch(oembedUrl);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch tweet: ${response.status} ${response.statusText}`);
+		}
+		
+		const data = await response.json();
+		return extractTweetText(data.html);
+	} catch (err) {
+		console.error('Error fetching tweet:', err);
+		return null;
+	}
+}
+
 function Input() {
 	return (
 		<div 
@@ -291,9 +318,17 @@ function Input() {
 					return;
 				}
 
-				// For now, just set the URL as the query
-				// TODO: Implement proper tweet fetching once we figure out the API approach
-				query.value = `tweet:${tweetId}`;
+				loading.value = true;
+				error.value = null;
+
+				const tweetText = await fetchTweetText(tweetId);
+				if (!tweetText) {
+					error.value = "Failed to fetch tweet text. The tweet might be private or deleted.";
+					loading.value = false;
+					return;
+				}
+
+				query.value = tweetText;
 				handleSearch();
 			}}
 		>
@@ -488,7 +523,7 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 			target="_blank"
 			rel="noopener noreferrer"
 			class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors outline-none ${
-				isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+				isSelected ? '[box-shadow:rgb(142,205,248)_0px_0px_0px_2px_inset] dark:bg-blue-900/20' : ''
 			}`}
 			onClick={(e) => {
 				if (!e.ctrlKey && !e.metaKey) {
@@ -712,6 +747,12 @@ export function App() {
 					top: window.innerHeight * 0.8,
 					behavior: 'smooth',
 				});
+			}
+			// Enter to open selected tweet
+			if (e.key === "Enter" && selectedTweetIndex.value !== -1) {
+				e.preventDefault();
+				const tweetUrl = `https://x.com/${results.value[selectedTweetIndex.value].username}/status/${results.value[selectedTweetIndex.value].id}`;
+				window.open(tweetUrl, '_blank');
 			}
 		};
 
