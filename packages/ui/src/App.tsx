@@ -150,9 +150,6 @@ const selectedTweetIndex = signal<number>(-1);
 const isDarkMode = signal(document.documentElement.classList.contains('dark'));
 const headerHeight = signal(119);
 
-// Add this after other signals
-const tempTweet = signal<string | null>(null);
-
 function toggleDarkMode() {
 	isDarkMode.value = !isDarkMode.value;
 	document.documentElement.classList.toggle('dark');
@@ -287,12 +284,6 @@ function SettingsDialog() {
 	);
 }
 
-// Extract tweet ID from URL
-function extractTweetId(url: string) {
-	const match = url.match(/(?:twitter|x)\.com\/\w+\/status\/(\d+)/);
-	return match ? match[1] : null;
-}
-
 function Input() {
 	return (
 		<div class="relative">
@@ -414,6 +405,54 @@ function Results() {
 	);
 }
 
+const linkify = (text: string) => {
+	const urlRegex = /https?:\/\/[^\s<]+/g; // Updated to avoid matching inside HTML
+	const usernameRegex = /@(\w+)/g; // Simplified username regex
+
+	// First escape HTML
+	const escapedText = text.replace(
+		/[&<>"']/g,
+		(char) =>
+			({
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				'"': "&quot;",
+				"'": "&#039;",
+			})[char]!,
+	);
+
+	// Replace URLs first
+	let replacedText = escapedText.replace(urlRegex, (url) => {
+		const trimmedUrl = url.replace(/[.,;:]$/, "");
+		return `<a href="${trimmedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${trimmedUrl}</a>`;
+	});
+
+	// Then replace usernames
+	replacedText = replacedText.replace(
+		usernameRegex,
+		(match, username) =>
+			`<a href="https://x.com/${username}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${match}</a>`,
+	);
+
+	return replacedText;
+};
+
+const highlightText = (text: string, query: string) => {
+	if (!query) return linkify(text);
+
+	const linkedText = linkify(text);
+	const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+	// Use a non-greedy match to avoid matching across HTML tags
+	const regex = new RegExp(`(${safeQuery})(?![^<]*>)`, "gi");
+
+	return linkedText.replace(
+		regex,
+		'<mark class="bg-yellow-200 dark:bg-yellow-500 px-0.5 rounded">$1</mark>',
+	);
+};
+
 function Tweet({ result, index }: { result: (typeof results.value)[0]; index: number }) {
 	const userData = useSignal<UserData | null>(null);
 	const showProfile = useSignal(false);
@@ -450,54 +489,6 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 		day: "numeric",
 		year: result.date.includes("2024") ? undefined : "numeric",
 	});
-
-	const linkify = (text: string) => {
-		const urlRegex = /https?:\/\/[^\s<]+/g; // Updated to avoid matching inside HTML
-		const usernameRegex = /@(\w+)/g; // Simplified username regex
-
-		// First escape HTML
-		const escapedText = text.replace(
-			/[&<>"']/g,
-			(char) =>
-				({
-					"&": "&amp;",
-					"<": "&lt;",
-					">": "&gt;",
-					'"': "&quot;",
-					"'": "&#039;",
-				})[char]!,
-		);
-
-		// Replace URLs first
-		let replacedText = escapedText.replace(urlRegex, (url) => {
-			const trimmedUrl = url.replace(/[.,;:]$/, "");
-			return `<a href="${trimmedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${trimmedUrl}</a>`;
-		});
-
-		// Then replace usernames
-		replacedText = replacedText.replace(
-			usernameRegex,
-			(match, username) =>
-				`<a href="https://x.com/${username}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${match}</a>`,
-		);
-
-		return replacedText;
-	};
-
-	const highlightText = (text: string, query: string) => {
-		if (!query) return linkify(text);
-
-		const linkedText = linkify(text);
-		const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-		// Use a non-greedy match to avoid matching across HTML tags
-		const regex = new RegExp(`(${safeQuery})(?![^<]*>)`, "gi");
-
-		return linkedText.replace(
-			regex,
-			'<mark class="bg-yellow-200 dark:bg-yellow-500 px-0.5 rounded">$1</mark>',
-		);
-	};
 
 	return (
 		<a
@@ -710,243 +701,97 @@ function ProfileHoverCard({ userData, username }: { userData: UserData | null; u
 	);
 }
 
-
-const handleDragOver = (e: DragEvent) => {
-	e.preventDefault();
-	e.stopPropagation();
-	if (e.dataTransfer) {
-		e.dataTransfer.dropEffect = 'copy';
-	}
-};
-
-// Add type for window.twttr
-declare global {
-	interface Window {
-		twttr?: {
-			widgets: {
-				createTweet: (
-					tweetId: string,
-					element: HTMLElement,
-					options?: {
-						theme?: 'light' | 'dark';
-						align?: 'left' | 'center' | 'right';
-						width?: number;
-					}
-				) => Promise<HTMLElement>;
-			};
-			ready: (callback: () => void) => void;
-		};
-	}
-}
-
-// Load Twitter script globally once
-const loadTwitterScript = () => {
-	return new Promise<void>((resolve) => {
-		const scriptId = "twitter-wjs";
-		
-		// If already loaded and initialized
-		if (window.twttr?.widgets) {
-			resolve();
-			return;
-		}
-
-		// If loading but not initialized
-		if (window.twttr) {
-			window.twttr.ready(resolve);
-			return;
-		}
-
-		// Start loading
-		if (!document.getElementById(scriptId)) {
-			const script = document.createElement("script");
-			script.id = scriptId;
-			script.src = "https://platform.twitter.com/widgets.js";
-			script.async = true;
-			script.onload = () => window.twttr?.ready(resolve);
-			document.head.appendChild(script);
-		}
-	});
-};
-
-// Load script on app start
-loadTwitterScript();
-
-interface TweetEmbedProps {
-	id: string;
-	onError?: (error: Error) => void;
-}
-
-function TweetEmbed({ id, onError }: TweetEmbedProps) {
-	const containerRef = useRef<HTMLDivElement>(null);
-	const errorSignal = signal<Error | null>(null);
-
-	useSignalEffect(() => {
-		if (!containerRef.current || !window.twttr?.widgets) return;
-
-		window.twttr.widgets
-			.createTweet(id, containerRef.current, {
-				theme: isDarkMode.value ? 'dark' : 'light',
-				width: 550,
-			})
-			.then((el) => {
-				if (!el) {
-					const err = new Error(`Failed to load tweet: ${id}`);
-					errorSignal.value = err;
-					onError?.(err);
-				}
-			})
-			.catch((error: Error) => {
-				errorSignal.value = error;
-				onError?.(error);
-			});
-	});
-
-	if (errorSignal.value) {
-		return (
-			<div class="p-4 text-red-500 dark:text-red-400">
-				Failed to load tweet: {errorSignal.value.message}
-			</div>
-		);
+const handleKeyDown = (e: KeyboardEvent) => {
+	// Don't handle shortcuts if input is focused, except for Escape
+	if (e.target instanceof HTMLInputElement && e.key !== 'Escape') {
+		return;
 	}
 
-	return <div ref={containerRef} class="flex justify-center" />;
-}
+	// Add copy shortcut (Cmd/Ctrl+C)
+	if ((e.metaKey || e.ctrlKey) && e.key === "c" && selectedTweetIndex.value !== -1) {
+		e.preventDefault();
+		const selectedTweet = results.value[selectedTweetIndex.value];
+		navigator.clipboard.writeText(selectedTweet.text).then(() => {
+			// Could add a toast notification here
+			// console.log('Tweet text copied to clipboard');
+		});
+		return;
+	}
 
-function TempTweetDisplay() {
-	if (!tempTweet.value) return null;
-
-	return (
-		<div class="fixed bottom-4 right-4 w-[550px] bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-			<div class="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-				<h3 class="font-medium">Tweet Preview</h3>
-				<button
-					onClick={() => tempTweet.value = null}
-					class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-					</svg>
-				</button>
-			</div>
-			<div class="p-4">
-				<TweetEmbed 
-					id={tempTweet.value} 
-					onError={(err) => error.value = err.message}
-				/>
-			</div>
-		</div>
-	);
-}
-
-// Update handleDrop function
-const handleDrop = async (e: DragEvent) => {
-	e.preventDefault();
-	e.stopPropagation();
-
-	const text = e.dataTransfer?.getData('text');
-	if (!text) return;
-
-	// Check if it's a tweet URL
-	const tweetId = extractTweetId(text);
-	if (!tweetId) return;
-
-	// Just show the tweet preview
-	tempTweet.value = tweetId;
+	// Cmd/Ctrl + K to focus search
+	if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+		e.preventDefault();
+		const searchInput = document.querySelector(
+			'input[type="text"]',
+		) as HTMLInputElement;
+		searchInput?.focus();
+	}
+	// Cmd/Ctrl + , to toggle settings
+	if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+		e.preventDefault();
+		toggleDialog('settings');
+	}
+	// Ctrl + / to toggle shortcuts
+	if ((e.metaKey || e.ctrlKey) && e.key === "/") {
+		e.preventDefault();
+		toggleDialog('shortcuts');
+	}
+	// Cmd + \ to toggle dark mode
+	if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+		e.preventDefault();
+		toggleDarkMode();
+	}
+	// / to focus search
+	if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+		e.preventDefault();
+		const searchInput = document.querySelector(
+			'input[type="text"]',
+		) as HTMLInputElement;
+		searchInput?.focus();
+	}
+	// j/k for next/previous tweet
+	if (e.key === "j" || e.key === "k") {
+		e.preventDefault();
+		if (selectedTweetIndex.value === -1 && results.value.length > 0) {
+			// If no tweet selected, select first one
+			selectedTweetIndex.value = 0;
+		} else {
+			selectedTweetIndex.value = Math.max(
+				0,
+				Math.min(
+					selectedTweetIndex.value + (e.key === "j" ? 1 : -1),
+					results.value.length - 1
+				)
+			);
+		}
+		document.querySelectorAll('a[href^="https://x.com"]')[selectedTweetIndex.value]?.scrollIntoView({
+			behavior: 'smooth',
+			block: 'nearest',
+		});
+	}
+	// Esc to close dialog
+	if (e.key === "Escape") {
+		currentDialog.value = null;
+	}
+	// Space for page down (if no dialog is open)
+	if (e.key === " " && !currentDialog.value) {
+		e.preventDefault();
+		window.scrollBy({
+			top: window.innerHeight * 0.8,
+			behavior: 'smooth',
+		});
+	}
+	// Enter to open selected tweet
+	if (e.key === "Enter" && selectedTweetIndex.value !== -1) {
+		e.preventDefault();
+		const tweetUrl = `https://x.com/${results.value[selectedTweetIndex.value].username}/status/${results.value[selectedTweetIndex.value].id}`;
+		window.open(tweetUrl, '_blank');
+	}
 };
 
 export function App() {
 	useEffect(() => {
 		handleSearch(); // Initial search
-	}, []);
-
-	useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent) => {
-			// Don't handle shortcuts if input is focused, except for Escape
-			if (e.target instanceof HTMLInputElement && e.key !== 'Escape') {
-				return;
-			}
-
-			// Add copy shortcut (Cmd/Ctrl+C)
-			if ((e.metaKey || e.ctrlKey) && e.key === "c" && selectedTweetIndex.value !== -1) {
-				e.preventDefault();
-				const selectedTweet = results.value[selectedTweetIndex.value];
-				navigator.clipboard.writeText(selectedTweet.text).then(() => {
-					// Could add a toast notification here
-					// console.log('Tweet text copied to clipboard');
-				});
-				return;
-			}
-
-			// Cmd/Ctrl + K to focus search
-			if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-				e.preventDefault();
-				const searchInput = document.querySelector(
-					'input[type="text"]',
-				) as HTMLInputElement;
-				searchInput?.focus();
-			}
-			// Cmd/Ctrl + , to toggle settings
-			if ((e.metaKey || e.ctrlKey) && e.key === ",") {
-				e.preventDefault();
-				toggleDialog('settings');
-			}
-			// Ctrl + / to toggle shortcuts
-			if ((e.metaKey || e.ctrlKey) && e.key === "/") {
-				e.preventDefault();
-				toggleDialog('shortcuts');
-			}
-			// Cmd + \ to toggle dark mode
-			if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
-				e.preventDefault();
-				toggleDarkMode();
-			}
-			// / to focus search
-			if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
-				e.preventDefault();
-				const searchInput = document.querySelector(
-					'input[type="text"]',
-				) as HTMLInputElement;
-				searchInput?.focus();
-			}
-			// j/k for next/previous tweet
-			if (e.key === "j" || e.key === "k") {
-				e.preventDefault();
-				if (selectedTweetIndex.value === -1 && results.value.length > 0) {
-					// If no tweet selected, select first one
-					selectedTweetIndex.value = 0;
-				} else {
-					selectedTweetIndex.value = Math.max(
-						0,
-						Math.min(
-							selectedTweetIndex.value + (e.key === "j" ? 1 : -1),
-							results.value.length - 1
-						)
-					);
-				}
-				document.querySelectorAll('a[href^="https://x.com"]')[selectedTweetIndex.value]?.scrollIntoView({
-					behavior: 'smooth',
-					block: 'nearest',
-				});
-			}
-			// Esc to close dialog
-			if (e.key === "Escape") {
-				currentDialog.value = null;
-			}
-			// Space for page down (if no dialog is open)
-			if (e.key === " " && !currentDialog.value) {
-				e.preventDefault();
-				window.scrollBy({
-					top: window.innerHeight * 0.8,
-					behavior: 'smooth',
-				});
-			}
-			// Enter to open selected tweet
-			if (e.key === "Enter" && selectedTweetIndex.value !== -1) {
-				e.preventDefault();
-				const tweetUrl = `https://x.com/${results.value[selectedTweetIndex.value].username}/status/${results.value[selectedTweetIndex.value].id}`;
-				window.open(tweetUrl, '_blank');
-			}
-		};
 
 		document.addEventListener("keydown", handleKeyDown);
 		return () => document.removeEventListener("keydown", handleKeyDown);
@@ -955,8 +800,6 @@ export function App() {
 	return (
 		<div 
 			class="min-h-screen bg-white dark:bg-gray-900 transition-colors theme-transition dark:text-white"
-			onDragOver={handleDragOver}
-			onDrop={handleDrop}
 		>
 			<ThemeToggle />
 			<div class="max-w-[600px] mx-auto">
@@ -1010,7 +853,6 @@ export function App() {
 			</div>
 			<SettingsDialog />
 			<KeyboardShortcutsDialog />
-			<TempTweetDisplay />
 		</div>
 	);
 }
