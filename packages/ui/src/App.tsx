@@ -1,6 +1,6 @@
-import { signal } from "@preact/signals";
+import { signal, useSignal, useSignalEffect } from "@preact/signals";
 import { ThemeToggle } from "./ThemeToggle";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import { createClient } from "@supabase/supabase-js";
 
 // Supabase setup
@@ -35,6 +35,9 @@ const USERS = [
 type UserData = {
 	displayName: string;
 	photo: string;
+	bio?: string;
+	website?: string;
+	location?: string;
 	loadedAt: number;
 	accountId: string;
 };
@@ -44,7 +47,7 @@ interface UserCache {
 
 // Load cache from localStorage
 const CACHE_KEY = "tweetSearchUserCache";
-const CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 1 week
+const CACHE_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 function loadCache(): UserCache {
 	try {
@@ -97,7 +100,7 @@ async function getUserData(
 		// Then get profile data using account_id
 		const { data: profile } = await supabase
 			.from("profile")
-			.select("avatar_media_url")
+			.select("avatar_media_url, bio, website, location")
 			.eq("account_id", account.account_id)
 			.single();
 
@@ -105,6 +108,9 @@ async function getUserData(
 			const userData = {
 				displayName: account.account_display_name || result.username,
 				photo: profile.avatar_media_url,
+				bio: profile.bio,
+				website: profile.website,
+				location: profile.location,
 				loadedAt: now,
 				accountId: account.account_id,
 			};
@@ -188,6 +194,13 @@ function UserSelect() {
 	);
 }
 
+
+const handleClearCache = () => {
+	userCache = {};
+	saveCache(userCache);
+	handleSearch(); // Refresh to update display names/photos
+};
+
 // Settings Dialog
 function SettingsDialog() {
 	if (currentDialog.value !== 'settings') return null;
@@ -223,7 +236,7 @@ function SettingsDialog() {
 							max="100"
 							value={nResults.value}
 							onInput={(e) => {
-								const val = parseInt(e.currentTarget.value);
+								const val = Number.parseInt(e.currentTarget.value);
 								if (val > 0 && val <= 100) {
 									nResults.value = val;
 								}
@@ -235,6 +248,18 @@ function SettingsDialog() {
 					<div>
 						<label class="block text-sm font-medium mb-1">Filter by user</label>
 						<UserSelect />
+					</div>
+
+					<div>
+						<button
+							onClick={handleClearCache}
+							class="w-full px-4 py-2 bg-red-500/80 text-white rounded-lg hover:bg-red-600"
+						>
+							Clear User Cache
+						</button>
+						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+							This will clear cached user data (display names, photos, etc.)
+						</p>
 					</div>
 				</div>
 
@@ -280,15 +305,36 @@ async function fetchTweetText(tweetId: string): Promise<string | null> {
 		const tweetUrl = `https://x.com/i/web/status/${tweetId}`;
 		const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(tweetUrl)}&omit_script=true`;
 		
+		console.log('Fetching tweet:', { tweetId, tweetUrl, oembedUrl });
+		
 		const response = await fetch(oembedUrl);
+		const responseText = await response.text();
+		console.log('oEmbed response:', { status: response.status, headers: Object.fromEntries(response.headers), body: responseText });
+		
 		if (!response.ok) {
-			throw new Error(`Failed to fetch tweet: ${response.status} ${response.statusText}`);
+			throw new Error(`Failed to fetch tweet: ${response.status} ${response.statusText}\nResponse: ${responseText}`);
 		}
 		
-		const data = await response.json();
-		return extractTweetText(data.html);
+		let data;
+		try {
+			data = JSON.parse(responseText);
+		} catch (e) {
+			throw new Error(`Invalid JSON response: ${e.message}\nResponse: ${responseText}`);
+		}
+		
+		if (!data.html) {
+			throw new Error(`No HTML content in response: ${JSON.stringify(data)}`);
+		}
+		
+		const text = extractTweetText(data.html);
+		if (!text) {
+			throw new Error(`Could not extract text from HTML: ${data.html}`);
+		}
+		
+		return text;
 	} catch (err) {
 		console.error('Error fetching tweet:', err);
+		error.value = `Failed to fetch tweet: ${err.message}`;
 		return null;
 	}
 }
@@ -439,28 +485,50 @@ function Results() {
 
 	return (
 		<div class="space-y-0">
-			{results.value.map((result, index) => (
-				<Tweet key={result.id} result={result} index={index} />
-			))}
+			<div class="space-y-0">
+				{results.value.map((result, index) => (
+					<Tweet key={result.id} result={result} index={index} />
+				))}
+			</div>
+			<div class="h-[80vh]" />
 		</div>
 	);
 }
 
 function Tweet({ result, index }: { result: (typeof results.value)[0]; index: number }) {
-	const [userData, setUserData] = useState<UserData | null>(null);
+	const userData = useSignal<UserData | null>(null);
+	const showProfile = useSignal(false);
 	const isSelected = index === selectedTweetIndex.value;
+	const tweetRef = useRef<HTMLAnchorElement>(null);
 
-	useEffect(() => {
+	useSignalEffect(() => {
 		// Try to get from cache immediately
 		const cached = userCache[result.username];
 		if (cached && Date.now() - cached.loadedAt < CACHE_TTL) {
-			setUserData(cached);
+			userData.value = cached;
+			return;
 		}
 		// Then fetch/update in background
 		getUserData(result).then((data) => {
-			if (data) setUserData(data);
+			if (data) userData.value = data;
 		});
-	}, [result]);
+	});
+
+	useEffect(() => {
+		if (isSelected && tweetRef.current) {
+			const rect = tweetRef.current.getBoundingClientRect();
+			const isFullyVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+			
+			if (!isFullyVisible) {
+				// Calculate position to show tweet at top with padding
+				const targetPosition = window.scrollY + rect.top - 80; // 80px from top
+				window.scrollTo({
+					top: targetPosition,
+					behavior: 'smooth'
+				});
+			}
+		}
+	}, [isSelected]);
 
 	const tweetUrl = `https://x.com/${result.username}/status/${result.id}`;
 	const formattedDate = new Date(result.date).toLocaleDateString("en-US", {
@@ -519,6 +587,7 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 
 	return (
 		<a
+			ref={tweetRef}
 			href={tweetUrl}
 			target="_blank"
 			rel="noopener noreferrer"
@@ -539,12 +608,18 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 			tabIndex={0}
 		>
 			<div class="flex gap-3">
-				<div class="flex-shrink-0">
-					<img
-						src={userData?.photo || "/placeholder.png"}
-						alt=""
-						class="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700"
-					/>
+				<div class="flex-shrink-0 relative">
+					<div
+						onMouseEnter={() => showProfile.value = true}
+						onMouseLeave={() => showProfile.value = false}
+					>
+						<img
+							src={userData.value?.photo || "/placeholder.png"}
+							alt=""
+							class="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer"
+						/>
+						{showProfile.value && <ProfileHoverCard userData={userData.value} username={result.username} />}
+					</div>
 				</div>
 				<div class="flex-1 min-w-0">
 					<div class="flex items-center gap-1 mb-1">
@@ -557,7 +632,7 @@ function Tweet({ result, index }: { result: (typeof results.value)[0]; index: nu
 								onClick={(e) => e.stopPropagation()}
 							>
 								<span class="font-bold text-gray-900 dark:text-gray-100">
-									{userData?.displayName || result.username}
+									{userData.value?.displayName || result.username}
 								</span>
 								<span class="text-gray-500 dark:text-gray-400">
 									{" "}
@@ -673,6 +748,49 @@ function KeyboardShortcutsDialog() {
 	);
 }
 
+function ProfileHoverCard({ userData, username }: { userData: UserData | null; username: string }) {
+	if (!userData) return null;
+
+	return (
+		<div class="absolute left-0 top-0 -translate-y-2 transform translate-x-16 z-50 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4">
+			<div class="flex items-start gap-3">
+				<img
+					src={userData.photo || "/placeholder.png"}
+					alt=""
+					class="w-16 h-16 rounded-full bg-gray-200 dark:bg-gray-700"
+				/>
+				<div class="flex-1 min-w-0">
+					<div class="font-bold text-gray-900 dark:text-gray-100 truncate">
+						{userData.displayName}
+					</div>
+					<div class="text-gray-500 dark:text-gray-400">@{username}</div>
+				</div>
+			</div>
+			{userData.bio && (
+				<p class="mt-3 text-gray-900 dark:text-gray-100 text-sm">{userData.bio}</p>
+			)}
+			<div class="mt-3 space-y-1">
+				{userData.location && (
+					<div class="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-sm">
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+							<path fill-rule="evenodd" d="M9.69 18.933l.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 00.281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 103 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 002.273 1.765 11.842 11.842 0 00.976.544l.062.029.018.008.006.003zM10 11.25a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" clip-rule="evenodd" />
+						</svg>
+						<span>{userData.location}</span>
+					</div>
+				)}
+				{userData.website && (
+					<div class="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-sm">
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+							<path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clip-rule="evenodd" />
+						</svg>
+						<a href={userData.website} target="_blank" rel="noopener noreferrer" class="hover:underline">{new URL(userData.website).hostname}</a>
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
 export function App() {
 	useEffect(() => {
 		handleSearch(); // Initial search
@@ -774,7 +892,7 @@ export function App() {
 								title="Keyboard Shortcuts (⌘/)"
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-									<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+									<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.02.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
 									<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
 								</svg>
 							</button>
