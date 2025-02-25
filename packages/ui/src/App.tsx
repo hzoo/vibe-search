@@ -351,7 +351,6 @@ function Input() {
 				value={query.value}
 				onInput={(e) => {
 					query.value = e.currentTarget.value;
-					handleSearch();
 				}}
 				onKeyDown={(e) => {
 					if (e.key === "Enter") {
@@ -505,6 +504,7 @@ const Tweet = memo(({ result, index }: { result: (typeof results.value)[0]; inde
 	const isSelected = index === selectedTweetIndex.value;
 	const imageLoaded = useSignal(false);
 	const tweetRef = useRef<HTMLAnchorElement>(null);
+	const profileTimeoutRef = useRef<number | null>(null);
 
 	useSignalEffect(() => {
 		// Try to get from cache immediately
@@ -527,7 +527,28 @@ const Tweet = memo(({ result, index }: { result: (typeof results.value)[0]; inde
 				behavior: 'instant'
 			});
 		}
+		
+		// Cleanup timeout on unmount
+		return () => {
+			if (profileTimeoutRef.current) {
+				clearTimeout(profileTimeoutRef.current);
+			}
+		};
 	}, [isSelected]);
+
+	const handleProfileMouseEnter = () => {
+		if (profileTimeoutRef.current) {
+			clearTimeout(profileTimeoutRef.current);
+			profileTimeoutRef.current = null;
+		}
+		showProfile.value = true;
+	};
+
+	const handleProfileMouseLeave = () => {
+		profileTimeoutRef.current = window.setTimeout(() => {
+			showProfile.value = false;
+		}, 300); // Short delay before hiding
+	};
 
 	const tweetUrl = `https://x.com/${result.username}/status/${result.id}`;
 	const formattedDate = new Date(result.date).toLocaleDateString("en-US", {
@@ -561,8 +582,8 @@ const Tweet = memo(({ result, index }: { result: (typeof results.value)[0]; inde
 			<div class="flex gap-3">
 				<div class="flex-shrink-0 relative">
 					<div
-						onMouseEnter={() => showProfile.value = true}
-						onMouseLeave={() => showProfile.value = false}
+						onMouseEnter={handleProfileMouseEnter}
+						onMouseLeave={handleProfileMouseLeave}
 					>
 						{!imageLoaded.value && (
 							<div class="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
@@ -573,7 +594,14 @@ const Tweet = memo(({ result, index }: { result: (typeof results.value)[0]; inde
 							onLoad={() => imageLoaded.value = true}
 							class={`w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer ${!imageLoaded.value ? 'hidden' : ''}`}
 						/>
-						{showProfile.value && <ProfileHoverCard userData={userData.value} username={result.username} />}
+						{showProfile.value && (
+							<ProfileHoverCard 
+								userData={userData.value} 
+								username={result.username} 
+								onMouseEnter={handleProfileMouseEnter}
+								onMouseLeave={handleProfileMouseLeave}
+							/>
+						)}
 					</div>
 				</div>
 				<div class="flex-1 min-w-0">
@@ -661,11 +689,25 @@ function KeyboardShortcutsDialog() {
 	);
 }
 
-function ProfileHoverCard({ userData, username }: { userData: UserData | null; username: string }) {
+function ProfileHoverCard({ 
+	userData, 
+	username, 
+	onMouseEnter, 
+	onMouseLeave 
+}: { 
+	userData: UserData | null; 
+	username: string;
+	onMouseEnter: () => void;
+	onMouseLeave: () => void;
+}) {
 	if (!userData) return null;
-
+  
 	return (
-		<div class="absolute left-0 top-0 -translate-y-2 transform translate-x-16 z-50 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4">
+		<div 
+			onMouseEnter={onMouseEnter}
+			onMouseLeave={onMouseLeave}
+			class="absolute left-0 top-0 -translate-y-2 transform translate-x-16 z-50 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4 transition-opacity duration-300"
+		>
 			<div class="flex items-start gap-3">
 				<img
 					src={userData.photo || "/placeholder.png"}
@@ -696,7 +738,15 @@ function ProfileHoverCard({ userData, username }: { userData: UserData | null; u
 						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
 							<path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clip-rule="evenodd" />
 						</svg>
-						<a href={userData.website} target="_blank" rel="noopener noreferrer" class="hover:underline">{new URL(userData.website).hostname}</a>
+						<a 
+							href={userData.website} 
+							target="_blank" 
+							rel="noopener noreferrer" 
+							class="hover:underline text-blue-500"
+							onClick={(e) => e.stopPropagation()}
+						>
+							{new URL(userData.website).hostname}
+						</a>
 					</div>
 				)}
 			</div>
