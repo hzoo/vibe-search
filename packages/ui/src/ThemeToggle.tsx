@@ -32,7 +32,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      class="fixed top-4 right-4 p-2 rounded-full 
+      class="p-2 rounded-full 
         bg-yellow-900/10 dark:bg-yellow-400/5
         hover:bg-yellow-900/20 dark:hover:bg-yellow-400/10 
         transition-colors duration-200

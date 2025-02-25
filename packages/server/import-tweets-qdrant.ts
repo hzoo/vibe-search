@@ -122,11 +122,11 @@ async function importTweets() {
 		});
 		
 		// Index for original tweet ID to allow searching by the original ID
-		// await client.createPayloadIndex("tweets", {
-		// 	field_name: "tweet_id",
-		// 	field_schema: "keyword",
-		// 	wait: true,
-		// });
+		await client.createPayloadIndex("tweets", {
+			field_name: "tweet_id",
+			field_schema: "keyword",
+			wait: true,
+		});
 	}
 
 	const filePath = process.argv[2];
@@ -135,6 +135,9 @@ async function importTweets() {
 		process.exit(1);
 	}
 
+	// Check for --force flag to skip duplicate checking
+	const forceImport = process.argv.includes("--force");
+	
 	console.log("Loading tweets...");
 	const file = Bun.file(filePath);
 	const tweetsData: TweetData = await file.json();
@@ -163,10 +166,69 @@ async function importTweets() {
 	});
 	console.log(`Tweets after filtering: ${tweetsData.tweets.length}`);
 
+	// Get existing tweet IDs to prevent duplicates
+	console.log("Checking for existing tweets...");
+	const existingTweetIds = new Set<string>();
+	
+	// Get the latest tweet date we have for this user
+	let latestTweetDate: Date | null = null;
+	
+	// Skip duplicate checking if --force flag is provided
+	if (forceImport) {
+		console.log("Force import flag detected, skipping duplicate checking");
+	} else {
+		try {
+			// Get a small sample of tweets to find the latest one
+			const latestTweetQuery = await client.scroll("tweets", {
+				filter: {
+					must: [
+						{
+							key: "username",
+							match: {
+								value: username,
+							},
+						},
+					],
+				},
+				limit: 100, // Get a reasonable sample to find the latest tweet
+				with_payload: true,
+			});
+			
+			// Find the latest tweet date from the sample
+			if (latestTweetQuery.points.length > 0) {
+				// Find the latest date from the returned tweets
+				for (const point of latestTweetQuery.points) {
+					if (point.payload?.created_at) {
+						const tweetDate = new Date(point.payload.created_at as string);
+						if (!latestTweetDate || tweetDate > latestTweetDate) {
+							latestTweetDate = tweetDate;
+						}
+					}
+				}
+				
+				if (latestTweetDate) {
+					console.log(`Latest tweet date: ${latestTweetDate.toISOString()}`);
+					console.log(`Will only import tweets newer than ${latestTweetDate.toISOString()}`);
+				}
+			} else {
+				console.log("No existing tweets found for this user, will import all tweets");
+			}
+		} catch (error) {
+			console.warn("Error checking for existing tweets:", error);
+			console.warn("Continuing with import, but duplicates may be created.");
+		}
+	}
+
 	// Process tweets in chunks to avoid memory issues
 	let successCount = 0;
 	let errorCount = 0;
 	let processedCount = 0;
+	let skippedCount = 0;
+	
+	// Sort tweets by date (oldest first) to ensure proper thread building
+	tweetsData.tweets.sort((a, b) => 
+		new Date(a.tweet.created_at).getTime() - new Date(b.tweet.created_at).getTime()
+	);
 
 	// Process tweets in chunks
 	for (let i = 0; i < tweetsData.tweets.length; i += CHUNK_SIZE) {
@@ -177,7 +239,38 @@ async function importTweets() {
 		try {
 			// Process this chunk
 			const processedTweets = processTweets(chunk, username, displayName);
-			const threads = buildThreads(processedTweets);
+			
+			// Filter out tweets that already exist or are older than our latest tweet
+			const newTweets = forceImport 
+				? processedTweets // Skip filtering if force import is enabled
+				: processedTweets.filter(tweet => {
+					// Skip if we already have this tweet
+					if (existingTweetIds.has(tweet.id)) {
+						skippedCount++;
+						return false;
+					}
+					
+					// Skip if this tweet is older than our latest tweet
+					if (latestTweetDate) {
+						const tweetDate = new Date(tweet.created_at);
+						if (tweetDate <= latestTweetDate) {
+							skippedCount++;
+							return false;
+						}
+					}
+					
+					return true;
+				});
+			
+			if (newTweets.length === 0) {
+				console.log("No new tweets in this chunk, skipping...");
+				processedCount += chunk.length;
+				continue;
+			}
+			
+			console.log(`Processing ${newTweets.length} new tweets from chunk of ${processedTweets.length}`);
+			
+			const threads = buildThreads(newTweets);
 
 			if (threads.length === 0) continue;
 
@@ -220,6 +313,9 @@ async function importTweets() {
 				console.log(`done in ${formatTime(performance.now() - upsertStart)}`);
 				successCount += threads.length;
 				processedCount += threads.length;
+				
+				// Add these tweet IDs to our set to prevent duplicates in future chunks
+				threads.forEach(thread => existingTweetIds.add(thread.id));
 			} catch (error: unknown) {
 				console.error("Error upserting to Qdrant:");
 				if (error && typeof error === 'object' && 'data' in error) {
@@ -244,6 +340,7 @@ async function importTweets() {
 	const collectionInfo = await client.getCollection("tweets");
 	console.log("\nImport summary:");
 	console.log(`- Successfully processed: ${successCount} threads`);
+	console.log(`- Skipped (already exists): ${skippedCount} tweets`);
 	console.log(`- Errors encountered: ${errorCount}`);
 	console.log(`- Total items in collection: ${collectionInfo.points_count}`);
 	

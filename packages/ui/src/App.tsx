@@ -22,6 +22,11 @@ const embeddingsUrl =
 		? "http://localhost:3001/api/search"
 		: "http://vibe-search-api.henryzoo.com/api/search";
 
+const importUrl =
+	window.location.hostname === "localhost"
+		? "http://localhost:3001/api/import"
+		: "http://vibe-search-api.henryzoo.com/api/import";
+
 // Available users for filtering
 const USERS = [
 	{
@@ -144,12 +149,26 @@ const results = signal<
 const loading = signal(false);
 const error = signal<string | null>(null);
 // Dialog control
-const currentDialog = signal<'settings' | 'shortcuts' | null>(null);
+const currentDialog = signal<'settings' | 'shortcuts' | 'import' | null>(null);
 // Tweet selection
 const selectedTweetIndex = signal<number>(-1);
 // Theme control
-const isDarkMode = signal(document.documentElement.classList.contains('dark'));
+const isDarkMode = signal(localStorage.getItem('theme') === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches);
 const headerHeight = signal(119);
+
+// Import related signals
+const importStatus = signal<{
+	id: string;
+	username: string;
+	status: 'pending' | 'processing' | 'completed' | 'failed';
+	progress: number;
+	total: number;
+	error?: string;
+	startTime: number;
+	endTime?: number;
+} | null>(null);
+const importLoading = signal(false);
+const importError = signal<string | null>(null);
 
 function toggleDarkMode() {
 	isDarkMode.value = !isDarkMode.value;
@@ -160,7 +179,7 @@ function toggleDarkMode() {
 // Track last dialog open time to handle double-press to close
 const lastDialogOpenTime = signal<{ dialog: string; time: number } | null>(null);
 
-function toggleDialog(dialog: 'settings' | 'shortcuts') {
+function toggleDialog(dialog: 'settings' | 'shortcuts' | 'import') {
 	const now = Date.now();
 	// If same dialog was opened in last 500ms, close it
 	if (lastDialogOpenTime.value?.dialog === dialog && now - lastDialogOpenTime.value.time < 500) {
@@ -198,6 +217,78 @@ const handleClearCache = () => {
 	userCache = {};
 	saveCache(userCache);
 	handleSearch(); // Refresh to update display names/photos
+};
+
+// Handle file upload for import
+const handleFileUpload = async (file: File) => {
+	if (!file) return;
+	
+	importLoading.value = true;
+	importError.value = null;
+	
+	try {
+		const formData = new FormData();
+		formData.append("file", file);
+		
+		const response = await fetch(importUrl, {
+			method: "POST",
+			body: formData,
+		});
+		
+		if (!response.ok) {
+			throw new Error(`Import failed: ${response.status} ${response.statusText}`);
+		}
+		
+		const data = await response.json();
+		
+		if (data.importId) {
+			// Start polling for status
+			pollImportStatus(data.importId);
+		} else {
+			throw new Error("No import ID returned from server");
+		}
+	} catch (err) {
+		importError.value = err instanceof Error ? err.message : String(err);
+		importLoading.value = false;
+	}
+};
+
+// Poll for import status
+const pollImportStatus = async (importId: string) => {
+	const checkStatus = async () => {
+		try {
+			const response = await fetch(`${importUrl}?id=${importId}`);
+			
+			if (!response.ok) {
+				throw new Error(`Failed to get import status: ${response.status}`);
+			}
+			
+			const status = await response.json();
+			importStatus.value = status;
+			
+			// Continue polling if not completed or failed
+			if (status.status !== 'completed' && status.status !== 'failed') {
+				setTimeout(checkStatus, 2000);
+			} else {
+				importLoading.value = false;
+				// If completed successfully, refresh search results
+				if (status.status === 'completed') {
+					// If we know the username, set it as the selected user
+					if (status.username && status.username !== 'unknown') {
+						selectedUser.value = status.username;
+					}
+					handleSearch();
+					currentDialog.value = null;
+				}
+			}
+		} catch (err) {
+			importError.value = err instanceof Error ? err.message : String(err);
+			importLoading.value = false;
+		}
+	};
+	
+	// Start checking
+	checkStatus();
 };
 
 // Settings Dialog
@@ -258,7 +349,21 @@ function SettingsDialog() {
 							Clear User Cache
 						</button>
 						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-							This will clear cached user data (display names, photos, etc.)
+							Clears cached user profile data
+						</p>
+					</div>
+					
+					<div>
+						<button
+							onClick={() => {
+								currentDialog.value = 'import';
+							}}
+							class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+						>
+							Import Tweets
+						</button>
+						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+							Import tweets from a Twitter/X archive
 						</p>
 					</div>
 				</div>
@@ -280,6 +385,310 @@ function SettingsDialog() {
 						Cancel
 					</button>
 				</div>
+			</div>
+		</div>
+	);
+}
+
+// Import Dialog
+function ImportDialog() {
+	if (currentDialog.value !== 'import') return null;
+	
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const dragActive = useSignal(false);
+	const importMode = useSignal<'username' | 'file'>('username');
+	const usernameInput = useSignal('');
+	
+	const handleDrag = (e: DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		
+		if (e.type === "dragenter" || e.type === "dragover") {
+			dragActive.value = true;
+		} else if (e.type === "dragleave") {
+			dragActive.value = false;
+		}
+	};
+	
+	const handleDrop = (e: DragEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		dragActive.value = false;
+		
+		if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+			handleFileUpload(e.dataTransfer.files[0]);
+		}
+	};
+	
+	const handleFileChange = (e: Event) => {
+		const target = e.target as HTMLInputElement;
+		if (target.files && target.files.length > 0) {
+			handleFileUpload(target.files[0]);
+		}
+	};
+	
+	const handleButtonClick = () => {
+		fileInputRef.current?.click();
+	};
+	
+	const handleUsernameImport = async () => {
+		if (!usernameInput.value.trim()) return;
+		
+		importLoading.value = true;
+		importError.value = null;
+		
+		try {
+			const response = await fetch(`${importUrl}/username`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ username: usernameInput.value.trim() }),
+			});
+			
+			if (!response.ok) {
+				throw new Error(`Import failed: ${response.status} ${response.statusText}`);
+			}
+			
+			const data = await response.json();
+			
+			if (data.importId) {
+				// Start polling for status
+				pollImportStatus(data.importId);
+			} else {
+				throw new Error("No import ID returned from server");
+			}
+		} catch (err) {
+			importError.value = err instanceof Error ? err.message : String(err);
+			importLoading.value = false;
+		}
+	};
+	
+	return (
+		<div
+			class="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50"
+			onClick={(e) => {
+				if (e.target === e.currentTarget && !importLoading.value) {
+					currentDialog.value = null;
+				}
+			}}
+			onKeyDown={(e) => {
+				if (e.key === 'Escape' && !importLoading.value) {
+					currentDialog.value = null;
+				}
+			}}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Import Tweets"
+		>
+			<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-[500px] max-w-[90vw]">
+				<h2 class="text-lg font-bold mb-4">Import Tweets</h2>
+				
+				{importLoading.value && importStatus.value ? (
+					<div class="space-y-4">
+						<div class="text-center">
+							<p class="mb-2">
+								{importStatus.value.status === 'pending' && 'Preparing to import tweets...'}
+								{importStatus.value.status === 'processing' && 'Importing tweets...'}
+								{importStatus.value.status === 'completed' && 'Import completed!'}
+								{importStatus.value.status === 'failed' && 'Import failed'}
+							</p>
+							
+							{importStatus.value.status === 'processing' && (
+								<div class="space-y-2">
+									<div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+										<div 
+											class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+											style={{ width: `${importStatus.value.total > 0 ? (importStatus.value.progress / importStatus.value.total) * 100 : 0}%` }}
+										/>
+									</div>
+									<p class="text-sm text-gray-500 dark:text-gray-400">
+										{importStatus.value.progress} / {importStatus.value.total} tweets
+									</p>
+								</div>
+							)}
+							
+							{importStatus.value.status === 'completed' && (
+								<div class="mt-4">
+									<p class="text-green-500 dark:text-green-400 mb-2">Successfully imported {importStatus.value.total} tweets!</p>
+									<button
+										onClick={() => {
+											currentDialog.value = null;
+											// If we know the username, set it as the selected user
+											if (importStatus.value?.username && importStatus.value.username !== 'unknown') {
+												selectedUser.value = importStatus.value.username;
+											}
+											handleSearch();
+										}}
+										class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+									>
+										Close and Search
+									</button>
+								</div>
+							)}
+							
+							{importStatus.value.status === 'failed' && (
+								<div class="mt-4">
+									<p class="text-red-500 dark:text-red-400 mb-2">
+										{importStatus.value.error || 'An unknown error occurred during import.'}
+									</p>
+									<button
+										onClick={() => {
+											currentDialog.value = null;
+											importStatus.value = null;
+										}}
+										class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+									>
+										Close
+									</button>
+								</div>
+							)}
+						</div>
+					</div>
+				) : (
+					<div class="space-y-4">
+						{/* Import mode tabs */}
+						<div class="flex border-b border-gray-200 dark:border-gray-700">
+							<button
+								onClick={() => importMode.value = 'username'}
+								class={`py-2 px-4 font-medium ${
+									importMode.value === 'username'
+										? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+										: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+								}`}
+							>
+								Import by Username
+							</button>
+							<button
+								onClick={() => importMode.value = 'file'}
+								class={`py-2 px-4 font-medium ${
+									importMode.value === 'file'
+										? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+										: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+								}`}
+							>
+								Upload Archive
+							</button>
+						</div>
+						
+						{importError.value && (
+							<div class="p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+								{importError.value}
+							</div>
+						)}
+						
+						{importMode.value === 'username' ? (
+							<div class="space-y-4">
+								<p class="text-gray-600 dark:text-gray-300">
+									Enter a Twitter/X username to import their tweets into the search database.
+								</p>
+								
+								<div>
+									<label htmlFor="username" class="block text-sm font-medium mb-1">
+										Username
+									</label>
+									<div class="flex">
+										<span class="inline-flex items-center px-3 text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-400 border border-r-0 border-gray-300 dark:border-gray-600 rounded-l-md">
+											@
+										</span>
+										<input
+											id="username"
+											type="text"
+											value={usernameInput.value}
+											onInput={(e) => usernameInput.value = e.currentTarget.value.replace(/^@/, '')}
+											placeholder="username"
+											class="flex-1 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-r-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+										/>
+									</div>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+										Enter the username without the @ symbol
+									</p>
+								</div>
+								
+								<div class="flex justify-between">
+									<button
+										onClick={handleUsernameImport}
+										disabled={!usernameInput.value.trim()}
+										class={`px-4 py-2 text-white rounded-lg ${
+											usernameInput.value.trim()
+												? 'bg-blue-500 hover:bg-blue-600'
+												: 'bg-blue-300 dark:bg-blue-700 cursor-not-allowed'
+										}`}
+									>
+										Import Tweets
+									</button>
+									
+									<button
+										onClick={() => (currentDialog.value = null)}
+										class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+									>
+										Cancel
+									</button>
+								</div>
+							</div>
+						) : (
+							<div class="space-y-4">
+								<p class="text-gray-600 dark:text-gray-300">
+									Upload your Twitter/X archive JSON file to import your tweets into the search database.
+								</p>
+								
+								<div 
+									class={`border-2 border-dashed rounded-lg p-6 text-center ${
+										dragActive.value 
+											? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
+											: 'border-gray-300 dark:border-gray-700'
+									}`}
+									onDragEnter={handleDrag}
+									onDragOver={handleDrag}
+									onDragLeave={handleDrag}
+									onDrop={handleDrop}
+								>
+									<input
+										ref={fileInputRef}
+										type="file"
+										accept=".json"
+										class="hidden"
+										onChange={handleFileChange}
+									/>
+									
+									<svg 
+										xmlns="http://www.w3.org/2000/svg" 
+										fill="none" 
+										viewBox="0 0 24 24" 
+										stroke-width="1.5" 
+										stroke="currentColor" 
+										class="w-12 h-12 mx-auto text-gray-400 dark:text-gray-500 mb-3"
+									>
+										<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+									</svg>
+									
+									<p class="mb-2 text-sm text-gray-500 dark:text-gray-400">
+										<span class="font-semibold">Click to upload</span> or drag and drop
+									</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400">
+										JSON file only
+									</p>
+								</div>
+								
+								<div class="flex justify-between">
+									<button
+										onClick={handleButtonClick}
+										class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+									>
+										Select File
+									</button>
+									
+									<button
+										onClick={() => (currentDialog.value = null)}
+										class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+									>
+										Cancel
+									</button>
+								</div>
+							</div>
+						)}
+					</div>
+				)}
 			</div>
 		</div>
 	);
@@ -641,10 +1050,13 @@ const Tweet = memo(({ result, index }: { result: (typeof results.value)[0]; inde
 });
 
 const shortcuts = [
-	{ key: 'Ctrl + /', description: 'Show keyboard shortcuts' },
-	{ key: 'Ctrl + ,', description: 'Show settings' },
+	{ key: '⌘ + /', description: 'Show shortcuts' },
+	{ key: '⌘ + ,', description: 'Show settings' },
 	{ key: 'j', description: 'Next tweet' },
 	{ key: 'k', description: 'Previous tweet' },
+	{ key: '⌘\\', description: 'Toggle dark mode' },
+	{ key: '⌘I', description: 'Import tweets' },
+	{ key: '⌘C', description: 'Copy selected tweet' },
 	{ key: 'Space', description: 'Page down' },
 	{ key: '/', description: 'Focus search' },
 	{ key: 'Enter', description: 'Open selected tweet' },
@@ -765,18 +1177,15 @@ function handleKeyDownStable(e: KeyboardEvent) {
 		return;
 	}
 
-	// Cmd/Ctrl + K to focus search
-	if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-		e.preventDefault();
-		const searchInput = document.querySelector(
-			'input[type="text"]',
-		) as HTMLInputElement;
-		searchInput?.focus();
-	}
 	// Cmd/Ctrl + , to toggle settings
 	if ((e.metaKey || e.ctrlKey) && e.key === ",") {
 		e.preventDefault();
 		toggleDialog('settings');
+	}
+	// Cmd/Ctrl + I to toggle import dialog
+	if ((e.metaKey || e.ctrlKey) && e.key === "i") {
+		e.preventDefault();
+		toggleDialog('import');
 	}
 	// Ctrl + / to toggle shortcuts
 	if ((e.metaKey || e.ctrlKey) && e.key === "/") {
@@ -789,7 +1198,7 @@ function handleKeyDownStable(e: KeyboardEvent) {
 		toggleDarkMode();
 	}
 	// / to focus search
-	if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+	if (e.key === "/" && !(e.ctrlKey || e.metaKey)) {
 		e.preventDefault();
 		const searchInput = document.querySelector(
 			'input[type="text"]',
@@ -819,6 +1228,9 @@ function handleKeyDownStable(e: KeyboardEvent) {
 	// Esc to close dialog
 	if (e.key === "Escape") {
 		currentDialog.value = null;
+		if (e.target instanceof HTMLInputElement) {
+			e.target.blur();
+		}
 	}
 	// Space for page down (if no dialog is open)
 	if (e.key === " " && !currentDialog.value) {
@@ -848,7 +1260,6 @@ export function App() {
 		<div 
 			class="min-h-screen bg-white dark:bg-gray-900 transition-colors theme-transition dark:text-white"
 		>
-			<ThemeToggle />
 			<div class="max-w-[600px] mx-auto">
 				<div class="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-4 py-3 border-b border-gray-100 dark:border-gray-800 shadow-sm">
 					<div class="flex items-center justify-between mb-4">
@@ -862,6 +1273,27 @@ export function App() {
 								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.02.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
 									<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
+								</svg>
+							</button>
+							<ThemeToggle />
+							<button
+								onClick={() => currentDialog.value = 'import'}
+								class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+								title="Import Tweets"
+							>
+								<svg 
+									xmlns="http://www.w3.org/2000/svg" 
+									fill="none" 
+									viewBox="0 0 24 24" 
+									stroke-width="1.5" 
+									stroke="currentColor" 
+									class="w-5 h-5"
+								>
+									<path 
+										stroke-linecap="round" 
+										stroke-linejoin="round" 
+										d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" 
+									/>
 								</svg>
 							</button>
 							<button
@@ -880,7 +1312,7 @@ export function App() {
 									<path
 										stroke-linecap="round"
 										stroke-linejoin="round"
-										d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
+										d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.62.94.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
 									/>
 									<path
 										stroke-linecap="round"
@@ -899,6 +1331,7 @@ export function App() {
 				</div>
 			</div>
 			<SettingsDialog />
+			<ImportDialog />
 			<KeyboardShortcutsDialog />
 		</div>
 	);
