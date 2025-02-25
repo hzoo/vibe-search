@@ -51,6 +51,15 @@ The `--force` flag is useful for:
 - Re-importing after clearing the database
 - When you're sure there are no duplicates
 
+### Import History
+
+The system now maintains an import history file (`packages/server/import-history.json`) that tracks:
+- Last import date for each username
+- Latest tweet date for each username
+- Total tweet count imported for each username
+
+This makes subsequent imports much faster as the system can immediately determine which tweets are new without querying the database.
+
 ## Manual Setup (Alternative)
 
 If you prefer to run services separately, you can use the following commands:
@@ -73,42 +82,11 @@ bun run dev:qdrant
 bun run ui
 ```
 
-## Setup Chroma
-
-```bash
-# install chroma for embeddings db
-pip install chromadb
-
-# or via uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv python install
-# https://docs.trychroma.com/docs/overview/getting-started?lang=typescript
-uv tool install chromadb
-```
-
-```bash
-bun install
-# chroma (embeddings server)
-bun run chroma
-
-# import embeddings with path to tweet archive
-# chroma db folder at packages/server/tweets
-bun run import:chroma archives/defenderofbasic-archive.json 
-
-# server to talk to chroma
-bun run dev:chroma
-# ui
-bun run ui
-
-```
-
 ### Test embeds
 
 ```bash
 # Test qdrant
 bun run test:qdrant
-# Test chroma
-bun run test:chroma
 ```
 
 ## local supabase (defaults to public)

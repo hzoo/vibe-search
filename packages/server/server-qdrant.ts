@@ -7,6 +7,43 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUIDv7 } from "bun";
 
+// Import history path
+const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
+
+// Interface for import history
+interface ImportHistory {
+  [username: string]: {
+    lastImportDate: string;
+    lastTweetDate: string;
+    tweetCount: number;
+  };
+}
+
+// Function to load import history
+async function loadImportHistory(): Promise<ImportHistory> {
+  try {
+    if (existsSync(IMPORT_HISTORY_PATH)) {
+      const content = await Bun.file(IMPORT_HISTORY_PATH).text();
+      if (!content.trim()) {
+        return {};
+      }
+      try {
+        return JSON.parse(content) || {};
+      } catch (parseError) {
+        console.error("JSON parse error in import history:", parseError);
+        // If the file is corrupted, back it up and return empty object
+        const backupPath = `${IMPORT_HISTORY_PATH}.backup.${Date.now()}`;
+        Bun.write(backupPath, content);
+        console.warn(`Backed up corrupted import history to ${backupPath}`);
+        return {};
+      }
+    }
+  } catch (error) {
+    console.warn("Error loading import history:", error);
+  }
+  return {};
+}
+
 // Define types for search parameters and results
 interface SearchParams {
   vector: number[];
@@ -123,21 +160,40 @@ const server = serve({
         }
         
         // Search in Qdrant
-        const results = await client.search("tweets", searchParams);
-        
-        // Transform the results into a simpler format
-        const simplifiedResults = results.map((result) => ({
-          text: result.payload?.text || "",
-          distance: result.score || 0,
-          username: result.payload?.username || "",
-          date: result.payload?.created_at || "",
-          tweet_id: result.payload?.tweet_id || ""
-        }));
+        try {
+          const results = await client.search("tweets", searchParams);
+          
+          // Transform the results into a simpler format
+          const simplifiedResults = results.map((result) => ({
+            text: result.payload?.text || "",
+            distance: result.score || 0,
+            username: result.payload?.username || "",
+            date: result.payload?.created_at || "",
+            tweet_id: result.payload?.tweet_id || ""
+          }));
 
-        return Response.json(simplifiedResults, {
-          headers: corsHeaders,
-        });
+          return Response.json(simplifiedResults, {
+            headers: corsHeaders,
+          });
+        } catch (searchError: unknown) {
+          // Check if this is a "Not Found" error (collection doesn't exist)
+          const error = searchError as { status?: number; message?: string };
+          if (error.status === 404 || error.message?.includes("Not Found")) {
+            return Response.json(
+              { 
+                error: "No tweets found. Please import tweets first.", 
+                code: "NO_TWEETS_IMPORTED" 
+              },
+              { status: 404, headers: corsHeaders }
+            );
+          }
+          
+          // Other search errors
+          console.error("Search error:", searchError);
+          throw searchError;
+        }
       } catch (error) {
+        console.error("Search failed:", error);
         return Response.json(
           { error: "Search failed" },
           { status: 500, headers: corsHeaders }
@@ -147,6 +203,35 @@ const server = serve({
 
     // Import API endpoint
     if (req.url.includes("/api/import")) {
+      // Check import history for a username
+      if (req.url.includes("/api/import/history") && req.method === "GET") {
+        const url = new URL(req.url);
+        const username = url.searchParams.get("username");
+        
+        if (!username) {
+          return Response.json(
+            { error: "Username is required" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+        
+        try {
+          const importHistory = await loadImportHistory();
+          const userHistory = importHistory[username.toLowerCase()];
+          
+          return Response.json(
+            userHistory || { exists: false },
+            { headers: corsHeaders }
+          );
+        } catch (error) {
+          console.error("Error loading import history:", error);
+          return Response.json(
+            { error: "Failed to load import history" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+      }
+      
       // Handle import status check
       if (req.method === "GET") {
         const url = new URL(req.url);
@@ -174,7 +259,7 @@ const server = serve({
         // Check if this is a username import via JSON
         if (req.url.includes("/api/import/username")) {
           try {
-            const { username } = await req.json();
+            const { username, force = false } = await req.json();
             
             if (!username) {
               return Response.json(
@@ -187,7 +272,7 @@ const server = serve({
             const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username.toLowerCase()}/archive.json`;
             
             // Start the import process for remote file
-            startRemoteImport(importId, archiveUrl, username);
+            startRemoteImport(importId, archiveUrl, username, force);
             
             return Response.json({ 
               success: true, 
@@ -208,6 +293,7 @@ const server = serve({
           const formData = await req.formData();
           const file = formData.get("file") as File | null;
           const username = formData.get("username") as string | null;
+          const force = formData.get("force") === "true";
           
           // Handle file upload
           if (file) {
@@ -222,7 +308,7 @@ const server = serve({
             await Bun.write(tempPath, buffer);
             
             // Start the import process
-            startImport(importId, tempPath);
+            startImport(importId, tempPath, force);
             
             return Response.json({ 
               success: true, 
@@ -237,7 +323,7 @@ const server = serve({
             const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username}/archive.json`;
             
             // Start the import process for remote file
-            startRemoteImport(importId, archiveUrl, username);
+            startRemoteImport(importId, archiveUrl, username, force);
             
             return Response.json({ 
               success: true, 
@@ -265,7 +351,7 @@ const server = serve({
 });
 
 // Start the import process
-function startImport(importId: string, filePath: string) {
+function startImport(importId: string, filePath: string, force = false) {
   try {
     // Check if file exists
     if (!existsSync(filePath)) {
@@ -292,97 +378,61 @@ function startImport(importId: string, filePath: string) {
       startTime: Date.now()
     });
     
-    // Start the import process in a separate process
-    const importProcess = spawn(["bun", "run", "import-tweets-qdrant.ts", filePath], {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: {
-        ...process.env,
-        IMPORT_ID: importId
-      }
-    });
-    
-    // Update status to processing
+    // Start the import process directly using the library
     const status = importStatus.get(importId)!;
     status.status = "processing";
     importStatus.set(importId, status);
     
-    // Parse output to track progress
-    if (importProcess.stdout) {
-      importProcess.stdout.pipeTo(new WritableStream({
-        write(chunk) {
-          const text = new TextDecoder().decode(chunk);
-          
-          // Extract username
-          const usernameMatch = text.match(/Processing tweets for ([^\.]+)/);
-          if (usernameMatch?.[1]) {
-            const status = importStatus.get(importId)!;
-            status.username = usernameMatch[1];
-            importStatus.set(importId, status);
+    // Import tweets using the library function
+    import("./import-tweets-qdrant.js").then(async ({ importTweets }) => {
+      try {
+        const result = await importTweets({
+          filePath,
+          forceImport: force,
+          onProgress: (progress, total, status) => {
+            const currentStatus = importStatus.get(importId);
+            if (currentStatus) {
+              currentStatus.progress = progress;
+              currentStatus.total = total;
+              importStatus.set(importId, currentStatus);
+            }
           }
-          
-          // Extract total tweets
-          const totalMatch = text.match(/Tweets after filtering: (\d+)/);
-          if (totalMatch?.[1]) {
-            const status = importStatus.get(importId)!;
-            status.total = Number.parseInt(totalMatch[1], 10);
-            importStatus.set(importId, status);
-          }
-          
-          // Extract progress
-          const progressMatch = text.match(/Overall progress: \[(\d+)\/(\d+)\]/);
-          if (progressMatch?.[1] && progressMatch?.[2]) {
-            const status = importStatus.get(importId)!;
-            status.progress = Number.parseInt(progressMatch[1], 10);
-            importStatus.set(importId, status);
-          }
-          
-          // Log output
-          process.stdout.write(chunk);
-        }
-      }));
-    }
-    
-    // Handle errors
-    if (importProcess.stderr) {
-      importProcess.stderr.pipeTo(new WritableStream({
-        write(chunk) {
-          const text = new TextDecoder().decode(chunk);
-          
-          // Update status with error
-          const status = importStatus.get(importId)!;
-          status.error = text;
-          importStatus.set(importId, status);
-          
-          // Log error
-          process.stderr.write(chunk);
-        }
-      }));
-    }
-    
-    // Handle process completion
-    importProcess.exited.then((code) => {
-      const status = importStatus.get(importId)!;
-      status.endTime = Date.now();
-      
-      if (code === 0) {
+        });
+        
+        // Update status with results
+        const status = importStatus.get(importId)!;
+        status.username = result.username;
+        status.total = result.totalCount;
+        status.progress = result.totalCount;
         status.status = "completed";
-        status.progress = status.total;
-      } else {
-        status.status = "failed";
-        if (!status.error) {
-          status.error = `Process exited with code ${code}`;
+        status.endTime = Date.now();
+        importStatus.set(importId, status);
+        
+        // Clean up temp file
+        try {
+          Bun.spawn(["rm", filePath]);
+        } catch (e) {
+          console.error("Failed to remove temp file:", e);
         }
+      } catch (error) {
+        // Update status with error
+        const status = importStatus.get(importId)!;
+        status.status = "failed";
+        status.error = String(error);
+        status.endTime = Date.now();
+        importStatus.set(importId, status);
+        
+        console.error("Import failed:", error);
       }
-      
+    }).catch(error => {
+      // Handle module import error
+      const status = importStatus.get(importId)!;
+      status.status = "failed";
+      status.error = `Failed to load import module: ${error}`;
+      status.endTime = Date.now();
       importStatus.set(importId, status);
       
-      // Clean up temp file
-      try {
-        Bun.spawn(["rm", filePath]);
-      } catch (e) {
-        console.error("Failed to remove temp file:", e);
-      }
+      console.error("Failed to load import module:", error);
     });
   } catch (error) {
     console.error("Failed to start import:", error);
@@ -402,7 +452,7 @@ function startImport(importId: string, filePath: string) {
 }
 
 // Start the import process for a remote file
-async function startRemoteImport(importId: string, url: string, username: string) {
+async function startRemoteImport(importId: string, url: string, username: string, force = false) {
   try {
     // Initialize import status
     importStatus.set(importId, {
@@ -436,8 +486,57 @@ async function startRemoteImport(importId: string, url: string, username: string
     const buffer = await response.arrayBuffer();
     await Bun.write(tempPath, buffer);
     
-    // Start the import process
-    startImport(importId, tempPath);
+    // Start the import process directly using the library
+    import("./import-tweets-qdrant.js").then(async ({ importTweets }) => {
+      try {
+        const result = await importTweets({
+          filePath: tempPath,
+          forceImport: force,
+          onProgress: (progress, total, status) => {
+            const currentStatus = importStatus.get(importId);
+            if (currentStatus) {
+              currentStatus.progress = progress;
+              currentStatus.total = total;
+              importStatus.set(importId, currentStatus);
+            }
+          }
+        });
+        
+        // Update status with results
+        const status = importStatus.get(importId)!;
+        status.username = result.username;
+        status.total = result.totalCount;
+        status.progress = result.totalCount;
+        status.status = "completed";
+        status.endTime = Date.now();
+        importStatus.set(importId, status);
+        
+        // Clean up temp file
+        try {
+          Bun.spawn(["rm", tempPath]);
+        } catch (e) {
+          console.error("Failed to remove temp file:", e);
+        }
+      } catch (error) {
+        // Update status with error
+        const status = importStatus.get(importId)!;
+        status.status = "failed";
+        status.error = String(error);
+        status.endTime = Date.now();
+        importStatus.set(importId, status);
+        
+        console.error("Import failed:", error);
+      }
+    }).catch(error => {
+      // Handle module import error
+      const status = importStatus.get(importId)!;
+      status.status = "failed";
+      status.error = `Failed to load import module: ${error}`;
+      status.endTime = Date.now();
+      importStatus.set(importId, status);
+      
+      console.error("Failed to load import module:", error);
+    });
   } catch (error) {
     console.error("Failed to start remote import:", error);
     

@@ -7,14 +7,7 @@
   "scripts": {
     "postinstall": "cd packages/qdrant-local && bun run build",
     "ui": "bun --filter=ui run dev",
-    
-    "chroma": "bun --filter=server run chroma",
-    "dev:chroma": "bun --filter=server run dev:chroma",
-    "import:chroma": "bun --filter=server run import:chroma",
-    "test:chroma": "bun --filter=server run test:chroma",
-    
     "start": "bun run start.ts",
-    
     "qdrant": "bun --filter=server run qdrant",
     "dev:qdrant": "bun --filter=server run dev:qdrant",
     "import:qdrant": "bun --filter=server run import:qdrant",

@@ -169,6 +169,11 @@ const importStatus = signal<{
 } | null>(null);
 const importLoading = signal(false);
 const importError = signal<string | null>(null);
+const importHistory = signal<{
+	lastImportDate: string;
+	lastTweetDate: string;
+	tweetCount: number;
+} | null>(null);
 
 function toggleDarkMode() {
 	isDarkMode.value = !isDarkMode.value;
@@ -398,6 +403,59 @@ function ImportDialog() {
 	const dragActive = useSignal(false);
 	const importMode = useSignal<'username' | 'file'>('username');
 	const usernameInput = useSignal('');
+	const forceImport = useSignal(false);
+	const checkingHistory = useSignal(false);
+	const debounceTimeout = useRef<number | null>(null);
+	
+	// Check import history when username changes using useSignalEffect
+	useSignalEffect(() => {
+		// Clear any existing timeout
+		if (debounceTimeout.current) {
+			clearTimeout(debounceTimeout.current);
+			debounceTimeout.current = null;
+		}
+		
+		// Don't check if username is empty
+		if (!usernameInput.value.trim()) {
+			importHistory.value = null;
+			return;
+		}
+		
+		// Set a debounce timeout
+		debounceTimeout.current = window.setTimeout(async () => {
+			checkingHistory.value = true;
+			
+			try {
+				const response = await fetch(`${importUrl}/history?username=${encodeURIComponent(usernameInput.value.trim())}`);
+				
+				if (response.ok) {
+					const data = await response.json();
+					if (data.lastImportDate) {
+						importHistory.value = data;
+					} else {
+						importHistory.value = null;
+					}
+				} else {
+					importHistory.value = null;
+				}
+			} catch (err) {
+				console.error("Error checking import history:", err);
+				importHistory.value = null;
+			} finally {
+				checkingHistory.value = false;
+				debounceTimeout.current = null;
+			}
+		}, 600); // Slightly longer debounce for better UX
+	});
+	
+	// Cleanup timeout on unmount
+	useEffect(() => {
+		return () => {
+			if (debounceTimeout.current) {
+				clearTimeout(debounceTimeout.current);
+			}
+		};
+	}, []);
 	
 	const handleDrag = (e: DragEvent) => {
 		e.preventDefault();
@@ -443,7 +501,10 @@ function ImportDialog() {
 				headers: {
 					"Content-Type": "application/json",
 				},
-				body: JSON.stringify({ username: usernameInput.value.trim() }),
+				body: JSON.stringify({ 
+					username: usernameInput.value.trim(),
+					force: forceImport.value
+				}),
 			});
 			
 			if (!response.ok) {
@@ -462,6 +523,12 @@ function ImportDialog() {
 			importError.value = err instanceof Error ? err.message : String(err);
 			importLoading.value = false;
 		}
+	};
+	
+	// Format date for display
+	const formatDate = (dateString: string) => {
+		const date = new Date(dateString);
+		return date.toLocaleString();
 	};
 	
 	return (
@@ -547,84 +614,83 @@ function ImportDialog() {
 					</div>
 				) : (
 					<div class="space-y-4">
-						{/* Import mode tabs */}
-						<div class="flex border-b border-gray-200 dark:border-gray-700">
+						<div class="flex space-x-4">
 							<button
-								onClick={() => importMode.value = 'username'}
-								class={`py-2 px-4 font-medium ${
+								class={`px-4 py-2 rounded-md ${
 									importMode.value === 'username'
-										? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-										: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+										? 'bg-blue-500 text-white'
+										: 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
 								}`}
+								onClick={() => importMode.value = 'username'}
 							>
-								Import by Username
+								By Username
 							</button>
 							<button
-								onClick={() => importMode.value = 'file'}
-								class={`py-2 px-4 font-medium ${
+								class={`px-4 py-2 rounded-md ${
 									importMode.value === 'file'
-										? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-										: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+										? 'bg-blue-500 text-white'
+										: 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
 								}`}
+								onClick={() => importMode.value = 'file'}
 							>
-								Upload Archive
+								Upload File
 							</button>
 						</div>
 						
-						{importError.value && (
-							<div class="p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
-								{importError.value}
-							</div>
-						)}
-						
 						{importMode.value === 'username' ? (
 							<div class="space-y-4">
-								<p class="text-gray-600 dark:text-gray-300">
-									Enter a Twitter/X username to import their tweets into the search database.
-								</p>
-								
 								<div>
-									<label htmlFor="username" class="block text-sm font-medium mb-1">
-										Username
+									<label htmlFor="username-input" class="block text-sm font-medium mb-1">
+										Community Archive Username {usernameInput.value.trim() && !importHistory.value && (
+											<span class="ml-1 text-xs text-gray-500 dark:text-gray-400">no previous import found</span>
+										)}
 									</label>
-									<div class="flex">
-										<span class="inline-flex items-center px-3 text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-400 border border-r-0 border-gray-300 dark:border-gray-600 rounded-l-md">
-											@
-										</span>
-										<input
-											id="username"
-											type="text"
-											value={usernameInput.value}
-											onInput={(e) => usernameInput.value = e.currentTarget.value.replace(/^@/, '')}
-											placeholder="username"
-											class="flex-1 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-r-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-										/>
-									</div>
-									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-										Enter the username without the @ symbol
-									</p>
+									<input
+										id="username-input"
+										type="text"
+										class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+										placeholder="e.g. elonmusk"
+										value={usernameInput.value}
+										onInput={(e) => usernameInput.value = (e.target as HTMLInputElement).value}
+									/>
 								</div>
 								
-								<div class="flex justify-between">
-									<button
-										onClick={handleUsernameImport}
-										disabled={!usernameInput.value.trim()}
-										class={`px-4 py-2 text-white rounded-lg ${
-											usernameInput.value.trim()
-												? 'bg-blue-500 hover:bg-blue-600'
-												: 'bg-blue-300 dark:bg-blue-700 cursor-not-allowed'
-										}`}
-									>
-										Import Tweets
-									</button>
-									
-									<button
-										onClick={() => (currentDialog.value = null)}
-										class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
-									>
-										Cancel
-									</button>
+								{checkingHistory.value && (
+									<div class="text-sm text-gray-500 dark:text-gray-400">
+										Checking import history...
+									</div>
+								)}
+								
+								{importHistory.value && (
+									<div class="text-sm border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 p-3 rounded-md">
+										<p class="font-medium text-blue-800 dark:text-blue-300">Previous import found</p>
+										<p>Last imported: {formatDate(importHistory.value.lastImportDate)}</p>
+										<p>Latest tweet: {formatDate(importHistory.value.lastTweetDate)}</p>
+										<p>Total tweets: {importHistory.value.tweetCount}</p>
+										<p class="mt-2">Only tweets newer than the latest tweet date will be imported.</p>
+									</div>
+								)}
+								
+								<div class="flex items-center">
+									<input
+										type="checkbox"
+										id="force-import"
+										class="mr-2"
+										checked={forceImport.value}
+										onChange={(e) => forceImport.value = (e.target as HTMLInputElement).checked}
+									/>
+									<label htmlFor="force-import" class="text-sm">
+										Force import (ignore previous imports)
+									</label>
 								</div>
+								
+								<button
+									class="w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+									onClick={handleUsernameImport}
+									disabled={!usernameInput.value.trim() || importLoading.value}
+								>
+									Import Tweets
+								</button>
 							</div>
 						) : (
 							<div class="space-y-4">
@@ -687,11 +753,26 @@ function ImportDialog() {
 								</div>
 							</div>
 						)}
+						
+						{importError.value && (
+							<div class="text-red-500 text-sm mt-2">
+								{importError.value}
+							</div>
+						)}
 					</div>
 				)}
 			</div>
 		</div>
 	);
+}
+
+// Define a type for search results from the API
+interface SearchResult {
+	text: string;
+	distance: number;
+	username: string;
+	date: string;
+	tweet_id: string;
 }
 
 const handleSearch = async () => {
@@ -717,13 +798,22 @@ const handleSearch = async () => {
 		});
 
 		if (!response.ok) {
+			const errorData = await response.json();
+			
+			// Check if this is a "no tweets imported" error
+			if (errorData.code === "NO_TWEETS_IMPORTED") {
+				// Automatically open the import dialog
+				currentDialog.value = 'import';
+				throw new Error(errorData.error || "No tweets found. Please import tweets first.");
+			}
+			
 			throw new Error(
-				`Search failed: ${response.status} ${response.statusText}`,
+				errorData.error || `Search failed: ${response.status} ${response.statusText}`
 			);
 		}
 
 		const json = await response.json();
-		results.value = json.map((result: any) => ({
+		results.value = json.map((result: SearchResult) => ({
 			...result,
 			id: result.tweet_id
 		}));

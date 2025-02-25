@@ -1,21 +1,14 @@
 {
     "name": "server",
     "scripts": {
-        "chroma": "chroma run --path ./tweets",
-        "dev:chroma": "bun run server-chroma.ts",
-        "import:chroma": "bun run import-tweets-chroma.ts",
-        "test:chroma": "bun run test-embeddings-chroma.ts",
-
         "qdrant": "bun run qdrant.ts",
         "dev:qdrant": "bun run server-qdrant.ts",
-        "import:qdrant": "bun run import-tweets-qdrant.ts",
-        "test:qdrant": "bun run test-embeddings-qdrant.ts"
+        "test:qdrant": "bun run test-embeddings-qdrant.ts",
+        "import:qdrant": "bun run import-tweets-qdrant.ts"
     },
     "dependencies": {
         "@qdrant/js-client-rest": "^1.13.0",
         "@xenova/transformers": "^2.15.1",
-        "chromadb": "^1.10.4",
-        "chromadb-default-embed": "^2.13.2",
         "qdrant-local": "workspace:*"
     },
     "devDependencies": {
