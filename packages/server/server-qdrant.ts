@@ -2,7 +2,6 @@
 import { QdrantExtended } from "qdrant-local";
 import { pipeline } from '@xenova/transformers';
 import { serve } from "bun";
-import { spawn } from "bun";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUIDv7 } from "bun";
@@ -106,6 +105,43 @@ const server = serve({
     // Health check endpoint
     if (req.url.includes("/health")) {
       return healthResponse;
+    }
+
+    // Delete all embeddings endpoint
+    if (req.url.includes("/api/delete-embeddings") && req.method === "POST") {
+      try {
+        console.log("Deleting all embeddings...");
+        
+        // Check if tweets collection exists
+        const collections = await client.getCollections();
+        const collectionExists = collections.collections.some(c => c.name === "tweets");
+        
+        if (collectionExists) {
+          // Delete the collection
+          await client.deleteCollection("tweets");
+          
+          // Clear import history
+          if (existsSync(IMPORT_HISTORY_PATH)) {
+            await Bun.write(IMPORT_HISTORY_PATH, "{}");
+          }
+          
+          return Response.json(
+            { success: true, message: "All embeddings deleted successfully" },
+            { headers: corsHeaders }
+          );
+        }
+        
+        return Response.json(
+          { success: true, message: "No embeddings to delete" },
+          { headers: corsHeaders }
+        );
+      } catch (error) {
+        console.error("Failed to delete embeddings:", error);
+        return Response.json(
+          { error: "Failed to delete embeddings" },
+          { status: 500, headers: corsHeaders }
+        );
+      }
     }
 
     // Search API endpoint

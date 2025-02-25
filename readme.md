@@ -9,12 +9,11 @@
 
 ## Quick Start (Recommended)
 
-This project includes a unified startup script that runs all services in a single terminal.
-
 ```bash
+# if no bun
+curl -fsSL https://bun.sh/install | bash
 # Install dependencies (also installs qdrant binary ~70mb)
 bun install
-
 # Start all services in one terminal
 bun start
 ```

@@ -17,6 +17,11 @@ export const importUrl =
     ? "http://localhost:3001/api/import"
     : "http://vibe-search-api.henryzoo.com/api/import";
 
+export const deleteEmbeddingsUrl =
+  window.location.hostname === "localhost"
+    ? "http://localhost:3001/api/delete-embeddings"
+    : "http://vibe-search-api.henryzoo.com/api/delete-embeddings";
+
 // Available users for filtering
 export const USERS = [
   {
@@ -71,6 +76,9 @@ export const importHistory = signal<{
   lastTweetDate: string;
   tweetCount: number;
 } | null>(null);
+export const deleteLoading = signal(false);
+export const deleteError = signal<string | null>(null);
+export const deleteSuccess = signal<string | null>(null);
 
 // Track last dialog open time to handle double-press to close
 export const lastDialogOpenTime = signal<{ dialog: string; time: number } | null>(null);
@@ -156,5 +164,54 @@ export const handleSearch = async () => {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     loading.value = false;
+  }
+};
+
+// Delete all embeddings
+export const deleteAllEmbeddings = async () => {
+  if (!confirm("Are you sure you want to delete all embeddings? This action cannot be undone.")) {
+    return;
+  }
+  
+  deleteLoading.value = true;
+  deleteError.value = null;
+  deleteSuccess.value = null;
+  
+  try {
+    const response = await fetch(deleteEmbeddingsUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `Delete failed: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const json = await response.json();
+    deleteSuccess.value = json.message || "All embeddings deleted successfully";
+    
+    // Clear results
+    results.value = [];
+    error.value = null;
+    
+    // Clear import history
+    importHistory.value = null;
+    currentDialog.value = null;
+  } catch (err) {
+    deleteError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    deleteLoading.value = false;
+    
+    // Auto-hide success message after 3 seconds
+    if (deleteSuccess.value) {
+      setTimeout(() => {
+        deleteSuccess.value = null;
+      }, 3000);
+    }
   }
 }; 

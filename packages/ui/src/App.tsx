@@ -6,7 +6,7 @@ import { ImportDialog } from "./components/ImportDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { KeyboardShortcutsDialog } from "./components/KeyboardShortcutsDialog";
 import { handleKeyDown } from "./utils/keyboardUtils";
-import { currentDialog, toggleDialog, handleSearch } from "./store/signals";
+import { currentDialog, toggleDialog, handleSearch, deleteSuccess, deleteError } from "./store/signals";
 
 export function App() {
 	useEffect(() => {
@@ -87,6 +87,16 @@ export function App() {
 				</div>
 
 				<div class="divide-y divide-gray-100 dark:divide-gray-800">
+					{deleteSuccess.value && (
+						<div class="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 p-3 text-center">
+							{deleteSuccess.value}
+						</div>
+					)}
+					{deleteError.value && (
+						<div class="bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100 p-3 text-center">
+							{deleteError.value}
+						</div>
+					)}
 					<Results />
 				</div>
 			</div>
