@@ -12,8 +12,6 @@
  */
 
 import { spawn, type Subprocess } from "bun";
-import { existsSync } from "node:fs";
-import { resolve, basename } from "node:path";
 import { signal } from "@preact/signals";
 
 // Configuration
