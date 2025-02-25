@@ -8,7 +8,8 @@
     "dependencies": {
       "@preact/signals": "^2.0.1",
       "preact": "^10.26.2",
-      "tailwindcss": "^4.0.7"
+      "tailwindcss": "^4.0.7",
+      "@supabase/supabase-js": "^2.48.1"
     },
     "devDependencies": {
       "@preact/preset-vite": "^2.10.1",

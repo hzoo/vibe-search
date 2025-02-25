@@ -5,3 +5,7 @@ archives
 tweets
 .env
 .DS_Store
+
+packages/bin/
+packages/qdrant-local/bin/
+packages/qdrant-local/dist

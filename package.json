@@ -5,15 +5,24 @@
     "packages/*"
   ],
   "scripts": {
-    "chroma": "bun --filter=server run chroma",
-    "dev": "bun --filter=server run dev",
+    "postinstall": "cd packages/qdrant-local && bun run build",
     "ui": "bun --filter=ui run dev",
-    "import-tweets": "bun --filter=server run import"
+    
+    "chroma": "bun --filter=server run chroma",
+    "dev:chroma": "bun --filter=server run dev:chroma",
+    "import:chroma": "bun --filter=server run import:chroma",
+    "test:chroma": "bun --filter=server run test:chroma",
+    
+    "qdrant": "bun --filter=server run qdrant",
+    "dev:qdrant": "bun --filter=server run dev:qdrant",
+    "import:qdrant": "bun --filter=server run import:qdrant",
+    "test:qdrant": "bun --filter=server run test:qdrant"
   },
   "devDependencies": {
     "@types/bun": "^1.2.2"
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.48.1"
-  }
+  "trustedDependencies": [
+    "qdrant-local",
+    "sharp"
+  ]
 }

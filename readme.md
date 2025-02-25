@@ -6,7 +6,30 @@
 - referenced: https://github.com/DefenderOfBasic/twitter-semantic-search.
 - follow: [local setup](https://github.com/TheExGenesis/community-archive/blob/main/docs/local-setup.md). 
 
-## Setup
+
+## Setup Qdrant
+
+This project now includes a custom local implementation of Qdrant that automatically downloads and manages the Qdrant binary.
+
+```bash
+# also installs qdrant binary (~70mb) and data folder to packages/qdrant-local/bin
+bun install
+
+# Run Qdrant (uses local implementation)
+bun run qdrant
+
+# In a new terminal, import tweets using Qdrant
+# goes into packages/qdrant-local/bin
+bun run import:qdrant archives/defenderofbasic-archive.json
+
+# Start the server with Qdrant support
+bun run dev:qdrant
+
+# Run the UI
+bun run ui
+```
+
+## Setup Chroma
 
 ```bash
 # install chroma for embeddings db
@@ -23,17 +46,28 @@ uv tool install chromadb
 bun install
 # chroma (embeddings server)
 bun run chroma
-# server to talk to chroma
-bun run dev 
-# ui
-bun run ui
 
 # import embeddings with path to tweet archive
 # chroma db folder at packages/server/tweets
-bun run import-tweets archives/defenderofbasic-archive.json 
+bun run import:chroma archives/defenderofbasic-archive.json 
+
+# server to talk to chroma
+bun run dev:chroma
+# ui
+bun run ui
+
 ```
 
-## local supabase (unncessary)
+### Test embeds
+
+```bash
+# Test qdrant
+bun run test:qdrant
+# Test chroma
+bun run test:chroma
+```
+
+## local supabase (defaults to public)
 
 ```bash
 # run supabase (need Docker)

@@ -1,0 +1,28 @@
+{
+  "name": "qdrant-local",
+  "version": "0.1.0",
+  "description": "Qdrant client extension with local support",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node --external @qdrant/js-client-rest && tsc",
+    "postinstall": "bun run src/install.ts",
+    "test": "bun run src/test.ts"
+  },
+  "qdrantBinary": {
+    "repository": "https://github.com/qdrant/qdrant",
+    "version": "1.13.4",
+    "directory": "qdrant-local/bin",
+    "name": "qdrant"
+  },
+  "dependencies": {
+    "@qdrant/js-client-rest": "^1.13.0"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist"
+  ]
+} 
