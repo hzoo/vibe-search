@@ -2,6 +2,7 @@
 
 import { QdrantExtended } from "qdrant-local";
 import { pipeline } from '@xenova/transformers';
+import { randomUUIDv7 } from "bun";
 
 const CHUNK_SIZE = 500; // Process fewer tweets at a time
 const VECTOR_SIZE = 384; // Size of the embedding vectors from all-MiniLM-L6-v2
@@ -41,17 +42,9 @@ interface TweetData {
 	}>;
 }
 
-interface ThreadEmbed {
-	id: string;
-	text: string;
-	metadata: {
-		username: string;
-		created_at: string;
-	};
-}
 
 // Initialize the embedder directly in the main thread
-const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: false });
+const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
 
 // Function to get embeddings directly
 async function getEmbeddings(texts: string[]): Promise<number[][]> {
@@ -106,6 +99,13 @@ async function importTweets() {
 				indexing_threshold: 0, // Disable indexing during initial upload
 			},
 			shard_number: 2, // Use multiple shards for parallel uploads
+			on_disk_payload: true,
+			quantization_config: {
+				scalar: {
+				  type: "int8", // Stores embeddings as int8 for memory efficiency
+				  always_ram: true, // Speeds up query
+				},
+			  },
 		});
 		
 		// Create payload indexes for efficient filtering
@@ -120,6 +120,13 @@ async function importTweets() {
 			field_schema: "keyword",
 			wait: true,
 		});
+		
+		// Index for original tweet ID to allow searching by the original ID
+		// await client.createPayloadIndex("tweets", {
+		// 	field_name: "tweet_id",
+		// 	field_schema: "keyword",
+		// 	wait: true,
+		// });
 	}
 
 	const filePath = process.argv[2];
@@ -190,12 +197,15 @@ async function importTweets() {
 
 			// Prepare points for Qdrant
 			const points = threads.map((thread, idx) => ({
-				id: Number.parseInt(thread.id, 10) || idx + 1, // Convert string ID to number, fallback to index+1 if parsing fails
+				// Use UUIDv7 for point ID instead of tweet ID to avoid truncation issues
+				// UUIDv7 includes a timestamp component which maintains sortability
+				id: randomUUIDv7(),
 				vector: embeddings[idx],
 				payload: {
 					text: thread.text,
 					username: thread.metadata.username,
 					created_at: thread.metadata.created_at,
+					tweet_id: thread.id, // Store original tweet ID in payload
 				},
 			}));
 
@@ -242,7 +252,7 @@ async function importTweets() {
 	await client.updateCollection("tweets", {
 		optimizers_config: {
 			indexing_threshold: 20000, // Default value
-		},
+		}
 	});
 	
 	console.log("Import complete!");

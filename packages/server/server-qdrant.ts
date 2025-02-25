@@ -16,29 +16,16 @@ interface SearchParams {
       };
     }>;
   };
-}
-
-interface SearchResult {
-  id: number | string;
-  score: number;
-  payload?: {
-    text: string;
-    username: string;
-    created_at: string;
-    original_id: string;
-  };
-}
-
-interface SimplifiedResult {
-  text: string;
-  distance: number;
-  username: string;
-  date: string;
-  id: string;
+  params?: {
+    quantization: {
+      rescore: boolean;
+      oversampling: number;
+    }
+  }
 }
 
 // Initialize the embedding model
-const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: false });
+const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
 
 // Initialize Qdrant client
 const client = new QdrantExtended({ url: "http://localhost:6333" });
@@ -88,7 +75,13 @@ const server = serve({
         const searchParams: SearchParams = {
           vector: queryVector,
           limit: nResults,
-          with_payload: true
+          with_payload: true,
+          params: {
+            quantization: {
+              rescore: true,
+              oversampling: 1.5,
+            }
+          }
         };
         
         // Add filter if username is provided
@@ -106,15 +99,15 @@ const server = serve({
         }
         
         // Search in Qdrant
-        const results = await client.search("tweets", searchParams) as SearchResult[];
+        const results = await client.search("tweets", searchParams);
         
         // Transform the results into a simpler format
-        const simplifiedResults: SimplifiedResult[] = results.map((result) => ({
+        const simplifiedResults = results.map((result) => ({
           text: result.payload?.text || "",
           distance: result.score || 0,
           username: result.payload?.username || "",
           date: result.payload?.created_at || "",
-          id: result.id.toString()
+          tweet_id: result.payload?.tweet_id || ""
         }));
 
         return Response.json(simplifiedResults, {

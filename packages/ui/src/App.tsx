@@ -314,7 +314,10 @@ const handleSearch = async () => {
 		}
 
 		const json = await response.json();
-		results.value = json;
+		results.value = json.map((result: any) => ({
+			...result,
+			id: result.tweet_id
+		}));
 		
 		// After search, unfocus input and select first tweet
 		const searchInput = document.querySelector('input[type="text"]') as HTMLInputElement;
@@ -566,12 +569,6 @@ const Tweet = memo(({ result, index }: { result: (typeof results.value)[0]; inde
 			class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors ${
 				isSelected ? 'bg-white [box-shadow:rgb(142,205,248)_0px_0px_0px_2px_inset] dark:bg-blue-900/20' : ''
 			}`}
-			onClick={(e) => {
-				if (!e.ctrlKey && !e.metaKey) {
-					e.preventDefault();
-					selectedTweetIndex.value = index;
-				}
-			}}
 			onKeyDown={(e) => {
 				if (e.key === 'Enter') {
 					window.open(tweetUrl, '_blank');
