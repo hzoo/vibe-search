@@ -1,6 +1,7 @@
 ---
 description: importing files
 globs: *.ts, *.tsx
+alwaysApply: false
 ---
 use absolute imports (using "@/folder") over relative imports
 

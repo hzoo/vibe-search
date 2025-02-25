@@ -1,11 +1,14 @@
 ---
 description: global state management
 globs: *.ts
+alwaysApply: false
 ---
-## Signals Usage
-- Top-level signals should use `signal()` from @preact/signals-react
-```typescript
-// ✅ Top level signals (outside components)
-import { signal, type Signal } from "@preact/signals-react";
-const globalCount = signal(0);
+## signals usage
+```ts
+import { signal } from "@preact/signals-react";
+const count = signal(0);
+
+// access with .value, can be used in components
+// think about splitting components to save re-renders
+<button onClick={() => count.value++}>{count.value}</button>;
 ```
