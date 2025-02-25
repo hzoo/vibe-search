@@ -14,7 +14,7 @@
     "test:qdrant": "bun --filter=server run test:qdrant"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.2"
+    "@types/bun": "^1.2.3"
   },
   "trustedDependencies": [
     "qdrant-local",

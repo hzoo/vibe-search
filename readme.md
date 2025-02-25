@@ -89,7 +89,7 @@ bun run ui
 bun run test:qdrant
 ```
 
-## local supabase (defaults to public)
+## using local supabase (defaults to public archive)
 
 ```bash
 # run supabase (need Docker)

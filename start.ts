@@ -4,7 +4,7 @@
  * 
  * This script starts all necessary services in a single process:
  * 1. Qdrant vector database
- * 2. API server that talks to Qdrant
+ * 2. Dev server that talks to Qdrant
  * 3. UI server
  * 
  * Usage:
@@ -16,12 +16,12 @@ import { signal } from "@preact/signals";
 
 // Configuration
 const QDRANT_PORT = 6333;
-const API_PORT = 3001;
+const DEV_PORT = 3001;
 const UI_PORT = 5173;
 
 // Track process states
 const qdrantReady = signal(false);
-const apiReady = signal(false);
+const devReady = signal(false);
 const uiReady = signal(false);
 
 // Track processes
@@ -63,40 +63,41 @@ function runCommand(cmd: string, args: string[], cwd: string, env: Record<string
 console.log("🚀 Starting Qdrant vector database...");
 const qdrantProc = runCommand("bun", ["run", "qdrant"], "./packages/server");
 
-// Wait for Qdrant to be ready before starting the API server
+// Wait for Qdrant to be ready before starting the dev server
 const qdrantReadyCheck = setInterval(() => {
-  fetch(`http://localhost:${QDRANT_PORT}/dashboard/`)
+  fetch(`http://localhost:${QDRANT_PORT}/`)
     .then(response => {
       if (response.ok) {
         clearInterval(qdrantReadyCheck);
         qdrantReady.value = true;
         console.log("✅ Qdrant is ready!");
-        startApiServer();
+        startDevServer();
       }
     })
     .catch(() => {
       // Still waiting for Qdrant
+      console.log("❌ Qdrant is not ready yet");
     });
 }, 500);
 
-// Start API server
-function startApiServer() {
-  console.log("🚀 Starting API server...");
-  const apiProc = runCommand("bun", ["run", "dev:qdrant"], "./packages/server");
+// Start dev server
+function startDevServer() {
+  console.log("🚀 Starting dev server...");
+  const devProc = runCommand("bun", ["run", "dev:qdrant"], "./packages/server");
   
-  // Wait for API server to be ready
-  const apiReadyCheck = setInterval(() => {
-    fetch(`http://localhost:${API_PORT}/health`)
+  // Wait for dev server to be ready
+  const devReadyCheck = setInterval(() => {
+    fetch(`http://localhost:${DEV_PORT}/health`)
       .then(response => {
         if (response.ok) {
-          clearInterval(apiReadyCheck);
-          apiReady.value = true;
-          console.log("✅ API server is ready!");
+          clearInterval(devReadyCheck);
+          devReady.value = true;
+          console.log("✅ Dev server is ready!");
           startUiServer();
         }
       })
       .catch(() => {
-        // Still waiting for API
+        // Still waiting for dev server
       });
   }, 500);
 }
@@ -108,7 +109,7 @@ function startUiServer() {
     "bun", 
     ["run", "dev"], 
     "./packages/ui",
-    { VITE_API_URL: `http://localhost:${API_PORT}` }
+    { VITE_API_URL: `http://localhost:${DEV_PORT}` }
   );
   
   // Wait for UI server to be ready
@@ -132,7 +133,7 @@ function startUiServer() {
 function shutdown() {
   console.log("\n🛑 Shutting down all services...");
   
-  // Kill all child processes in reverse order (UI first, then API, then Qdrant)
+  // Kill all child processes in reverse order (UI first, then dev server, then Qdrant)
   for (const proc of [...processes].reverse()) {
     try {
       proc.kill();
