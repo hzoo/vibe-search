@@ -15,17 +15,17 @@ This project now includes a custom local implementation of Qdrant that automatic
 # also installs qdrant binary (~70mb) and data folder to packages/qdrant-local/bin
 bun install
 
-# Run Qdrant (uses local implementation)
+# terminal #1: qdrant binary (uses local implementation)
 bun run qdrant
 
 # In a new terminal, import tweets using Qdrant
 # goes into packages/qdrant-local/bin
 bun run import:qdrant archives/defenderofbasic-archive.json
 
-# Start the server with Qdrant support
+# terminal #2: start server that talks between qdrant and ui
 bun run dev:qdrant
 
-# Run the UI
+# terminal #3: run the UI
 bun run ui
 ```
 
