@@ -1,4 +1,4 @@
-import { supabase, USERS, handleSearch } from "./signals";
+import { supabase, USERS, handleSearch } from "@/ui/src/store/signals";
 
 // User data interface
 export type UserData = {

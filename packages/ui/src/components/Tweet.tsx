@@ -2,12 +2,12 @@ import { memo } from "preact/compat";
 import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { useSignalEffect } from "@preact/signals";
-import { ProfileHoverCard } from "./ProfileHoverCard";
-import type { UserData } from "../store/userCache";
-import { getUserData } from "../store/userCache";
-import { selectedTweetIndex, headerHeight, query, debugMode } from "../store/signals";
-import type { results } from "../store/signals";
-import { formatTweetDate, highlightText } from "../utils/textUtils";
+import { ProfileHoverCard } from "@/ui/src/components/ProfileHoverCard";
+import type { UserData } from "@/ui/src/store/userCache";
+import { getUserData } from "@/ui/src/store/userCache";
+import { selectedTweetIndex, headerHeight, query, debugMode } from "@/ui/src/store/signals";
+import type { results } from "@/ui/src/store/signals";
+import { formatTweetDate, highlightText } from "@/ui/src/utils/textUtils";
 
 interface TweetProps {
   result: (typeof results.value)[0];
@@ -231,7 +231,7 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
                     <div class="border border-blue-200 dark:border-blue-800 rounded-lg p-3 bg-blue-50 dark:bg-blue-900/30">
                       <h4 class="font-bold text-blue-800 dark:text-blue-300 mb-2">Display Text:</h4>
                       <p class="text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
-                        {result.full_text || result.text}
+                        {result.full_text}
                       </p>
                     </div>
                   </div>

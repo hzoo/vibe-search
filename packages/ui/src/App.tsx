@@ -1,11 +1,12 @@
 import { useEffect } from "preact/hooks";
-import { ThemeToggle } from "./ThemeToggle";
-import { SearchInput } from "./components/SearchInput";
-import { Results } from "./components/Results";
-import { ImportDialog } from "./components/ImportDialog";
-import { SettingsDialog } from "./components/SettingsDialog";
-import { KeyboardShortcutsDialog } from "./components/KeyboardShortcutsDialog";
-import { handleKeyDown } from "./utils/keyboardUtils";
+
+import { ThemeToggle } from "@/ui/src/components/ThemeToggle";
+import { SearchInput } from "@/ui/src/components/SearchInput";
+import { Results } from "@/ui/src/components/Results";
+import { ImportDialog } from "@/ui/src/components/import-tweets/ImportDialog";
+import { SettingsDialog } from "@/ui/src/components/SettingsDialog";
+import { KeyboardShortcutsDialog } from "@/ui/src/components/KeyboardShortcutsDialog";
+import { handleKeyDown } from "@/ui/src/utils/keyboardUtils";
 import { currentDialog, toggleDialog, handleSearch, deleteSuccess, deleteError } from "./store/signals";
 
 export function App() {

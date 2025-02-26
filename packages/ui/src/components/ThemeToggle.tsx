@@ -1,5 +1,5 @@
 import { useEffect } from "preact/hooks";
-import { isDarkMode, toggleDarkMode } from "./store/signals";
+import { isDarkMode, toggleDarkMode } from "@/ui/src/store/signals";
 
 export function ThemeToggle() {
 

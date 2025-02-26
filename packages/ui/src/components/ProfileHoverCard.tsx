@@ -1,4 +1,4 @@
-import type { UserData } from "../store/userCache";
+import type { UserData } from "@/ui/src/store/userCache";
 
 interface ProfileHoverCardProps {
   userData: UserData | null;

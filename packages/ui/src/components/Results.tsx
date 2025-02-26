@@ -1,5 +1,5 @@
-import { loading, error, results } from "../store/signals";
-import { Tweet } from "./Tweet";
+import { loading, error, results } from "@/ui/src/store/signals";
+import { Tweet } from "@/ui/src/components/Tweet";
 
 function LoadingTweet() {
   return (

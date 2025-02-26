@@ -1,6 +1,6 @@
-import { currentDialog, nResults, selectedUser, handleSearch, debugMode } from "../store/signals";
-import { handleClearCache } from "../store/userCache";
-import { UserSelect } from "./UserSelect";
+import { currentDialog, nResults, handleSearch, debugMode } from "@/ui/src/store/signals";
+import { handleClearCache } from "@/ui/src/store/userCache";
+import { UserSelect } from "@/ui/src/components/UserSelect";
 
 export function SettingsDialog() {
   if (currentDialog.value !== 'settings') return null;

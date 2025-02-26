@@ -76,6 +76,18 @@ export const deleteSuccess = signal<string | null>(null);
 // Track last dialog open time to handle double-press to close
 export const lastDialogOpenTime = signal<{ dialog: string; time: number } | null>(null);
 
+// Twitter users from Supabase
+export const twitterUsers = signal<Array<{
+  username: string;
+  account_display_name: string;
+  account_id: string;
+  num_tweets?: number;
+  num_followers?: number;
+  num_following?: number;
+}>>([]);
+export const twitterUsersLoading = signal(false);
+export const twitterUsersError = signal<string | null>(null);
+
 // Toggle dark mode
 export function toggleDarkMode() {
   isDarkMode.value = !isDarkMode.value;
@@ -103,7 +115,7 @@ interface SearchResult {
   distance: number;
   username: string;
   date: string;
-  tweet_id: string;
+  id: string;
 }
 
 // Handle search
@@ -147,7 +159,7 @@ export const handleSearch = async () => {
     const json = await response.json();
     results.value = json.map((result: SearchResult) => ({
       ...result,
-      id: result.tweet_id,
+      id: result.id,
       full_text: result.full_text || result.text
     }));
     

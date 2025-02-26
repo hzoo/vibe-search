@@ -1,5 +1,5 @@
-import { currentDialog } from "../store/signals";
-import { shortcuts } from "../utils/keyboardUtils";
+import { currentDialog } from "@/ui/src/store/signals";
+import { shortcuts } from "@/ui/src/utils/keyboardUtils";
 
 export function KeyboardShortcutsDialog() {
   if (currentDialog.value !== 'shortcuts') return null;

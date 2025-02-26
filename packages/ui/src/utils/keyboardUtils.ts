@@ -5,7 +5,7 @@ import {
   selectedTweetIndex, 
   results, 
   debugMode,
-} from '../store/signals';
+} from "@/ui/src/store/signals";
 
 // Available keyboard shortcuts
 export const shortcuts = [

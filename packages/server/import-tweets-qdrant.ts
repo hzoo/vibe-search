@@ -123,6 +123,7 @@ export function formatProgress(current: number, total: number): string {
 export interface ImportOptions {
 	filePath: string;
 	forceImport?: boolean;
+	saveArchive?: boolean;
 	onProgress?: (progress: number, total: number, status: string) => void;
 }
 
@@ -168,13 +169,6 @@ export async function importTweets(options: ImportOptions) {
 		
 		await client.createPayloadIndex("tweets", {
 			field_name: "created_at",
-			field_schema: "keyword",
-			wait: true,
-		});
-		
-		// Index for original tweet ID to allow searching by the original ID
-		await client.createPayloadIndex("tweets", {
-			field_name: "tweet_id",
 			field_schema: "keyword",
 			wait: true,
 		});
@@ -240,48 +234,6 @@ export async function importTweets(options: ImportOptions) {
 			console.log(`Last import: ${importHistory[username].lastImportDate}`);
 			console.log(`Latest tweet date: ${latestTweetDate.toISOString()}`);
 			console.log(`Will only import tweets newer than ${latestTweetDate.toISOString()}`);
-		} else {
-			console.log(`No import history found for ${username}, checking database...`);
-			try {
-				// Get a small sample of tweets to find the latest one
-				const latestTweetQuery = await client.scroll("tweets", {
-					filter: {
-						must: [
-							{
-								key: "username",
-								match: {
-									value: username,
-								},
-							},
-						],
-					},
-					limit: 100, // Get a reasonable sample to find the latest tweet
-					with_payload: true,
-				});
-				
-				// Find the latest tweet date from the sample
-				if (latestTweetQuery.points.length > 0) {
-					// Find the latest date from the returned tweets
-					for (const point of latestTweetQuery.points) {
-						if (point.payload?.created_at) {
-							const tweetDate = new Date(point.payload.created_at as string);
-							if (!latestTweetDate || tweetDate > latestTweetDate) {
-								latestTweetDate = tweetDate;
-							}
-						}
-					}
-					
-					if (latestTweetDate) {
-						console.log(`Latest tweet date from database: ${latestTweetDate.toISOString()}`);
-						console.log(`Will only import tweets newer than ${latestTweetDate.toISOString()}`);
-					}
-				} else {
-					console.log("No existing tweets found for this user, will import all tweets");
-				}
-			} catch (error) {
-				console.warn("Error checking for existing tweets:", error);
-				console.warn("Continuing with import, but duplicates may be created.");
-			}
 		}
 	}
 
@@ -360,7 +312,7 @@ export async function importTweets(options: ImportOptions) {
 			const threadTexts = threads.map(t => t?.text || "");
 			
 			// Generate embeddings directly
-				// Process texts in smaller batches to avoid memory issues
+			// Process texts in smaller batches to avoid memory issues
 			const batchSize = 50;
 			const embeddings: number[][] = [];
 
@@ -379,16 +331,13 @@ export async function importTweets(options: ImportOptions) {
 
 			// Prepare points for Qdrant
 			const points = threads.map((thread, idx) => ({
-				// Use UUIDv7 for point ID instead of tweet ID to avoid truncation issues
-				// UUIDv7 includes a timestamp component which maintains sortability
-				id: randomUUIDv7(),
+				id: BigInt(thread.id),
 				vector: embeddings[idx],
 				payload: {
-					text: thread?.text || "",
-					full_text: thread?.metadata?.full_text || thread?.text || "",
-					username: thread?.metadata?.username || "",
-					created_at: thread?.metadata?.created_at || "",
-					tweet_id: thread?.id || "", // Store original tweet ID in payload
+					text: thread.text || "",
+					full_text: thread.metadata?.full_text || thread.text || "",
+					username: thread.metadata?.username || "",
+					created_at: thread.metadata?.created_at || "",
 				},
 			}));
 
@@ -397,6 +346,7 @@ export async function importTweets(options: ImportOptions) {
 			const upsertStart = performance.now();
 			try {
 				await client.upsert("tweets", {
+					// @ts-ignore qdrant supports bigint ids but not in the types
 					points,
 					wait: true,
 				});
@@ -578,7 +528,7 @@ export function buildThreads(tweets: Tweet[]) {
 				full_text: fullText, // Original text for display
 			},
 		};
-	}).filter(Boolean); // Remove null entries
+	}).filter(Boolean) as { id: string; text: string; metadata: { username: string; created_at: string; full_text: string } }[]; // Remove null entries
 }
 
 // Create a CLI wrapper for direct execution

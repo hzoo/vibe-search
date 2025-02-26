@@ -1,4 +1,4 @@
-import { query, handleSearch } from "../store/signals";
+import { query, handleSearch } from "@/ui/src/store/signals";
 
 export function SearchInput() {
   return (

@@ -2,13 +2,15 @@
 import { QdrantExtended } from "qdrant-local";
 import { pipeline } from '@xenova/transformers';
 import { serve } from "bun";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUIDv7 } from "bun";
 import { cleanTweet, type TweetPreprocessingOptions } from "./tweet-preprocessor";
 
 // Import history path
 const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
+// Archives directory path
+const ARCHIVES_DIR = join(import.meta.dir, "archives");
 
 // Configure tweet preprocessing options for search queries
 const SEARCH_PREPROCESSING_OPTIONS: TweetPreprocessingOptions = {
@@ -55,6 +57,36 @@ async function loadImportHistory(): Promise<ImportHistory> {
   return {};
 }
 
+// Function to check if archives exist for a username
+function checkArchivesForUsername(username: string) {
+  if (!existsSync(ARCHIVES_DIR)) {
+    return { exists: false, archives: [] };
+  }
+  
+  try {
+    const files = readdirSync(ARCHIVES_DIR)
+      .filter(file => file.toLowerCase().startsWith(username.toLowerCase()) && file.endsWith('.json'))
+      .map(file => {
+        const filePath = join(ARCHIVES_DIR, file);
+        const stats = statSync(filePath);
+        return {
+          filename: file,
+          size: stats.size,
+          created: stats.birthtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime()); // Sort by newest first
+    
+    return {
+      exists: files.length > 0,
+      archives: files
+    };
+  } catch (error) {
+    console.error("Error checking archives:", error);
+    return { exists: false, archives: [] };
+  }
+}
+
 // Define types for search parameters and results
 interface SearchParams {
   vector: number[];
@@ -86,6 +118,7 @@ const importStatus = new Map<string, {
   error?: string;
   startTime: number;
   endTime?: number;
+  archivePath?: string; // Add path to saved archive
 }>();
 
 // Initialize the embedding model
@@ -154,6 +187,22 @@ const server = serve({
           { status: 500, headers: corsHeaders }
         );
       }
+    }
+
+    // Check archives endpoint
+    if (req.url.includes("/api/archives") && req.method === "GET") {
+      const url = new URL(req.url);
+      const username = url.searchParams.get("username");
+      
+      if (!username) {
+        return Response.json(
+          { error: "Username is required" },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+      
+      const archives = checkArchivesForUsername(username);
+      return Response.json(archives, { headers: corsHeaders });
     }
 
     // Search API endpoint
@@ -231,7 +280,7 @@ const server = serve({
             distance: result.score || 0,
             username: result.payload?.username || "",
             date: result.payload?.created_at || "",
-            tweet_id: result.payload?.tweet_id || ""
+            id: result.id.toString() || ""
           }));
 
           return Response.json(simplifiedResults, {
@@ -321,7 +370,7 @@ const server = serve({
         // Check if this is a username import via JSON
         if (req.url.includes("/api/import/username")) {
           try {
-            const { username, force = false } = await req.json();
+            const { username, force = false, saveArchive = false } = await req.json();
             
             if (!username) {
               return Response.json(
@@ -334,7 +383,7 @@ const server = serve({
             const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username.toLowerCase()}/archive.json`;
             
             // Start the import process for remote file
-            startRemoteImport(importId, archiveUrl, username, force);
+            startRemoteImport(importId, archiveUrl, username, force, saveArchive);
             
             return Response.json({ 
               success: true, 
@@ -356,6 +405,7 @@ const server = serve({
           const file = formData.get("file") as File | null;
           const username = formData.get("username") as string | null;
           const force = formData.get("force") === "true";
+          const saveArchive = formData.get("saveArchive") === "true";
           
           // Handle file upload
           if (file) {
@@ -370,7 +420,7 @@ const server = serve({
             await Bun.write(tempPath, buffer);
             
             // Start the import process
-            startImport(importId, tempPath, force);
+            startImport(importId, tempPath, force, saveArchive);
             
             return Response.json({ 
               success: true, 
@@ -385,7 +435,7 @@ const server = serve({
             const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username}/archive.json`;
             
             // Start the import process for remote file
-            startRemoteImport(importId, archiveUrl, username, force);
+            startRemoteImport(importId, archiveUrl, username, force, saveArchive);
             
             return Response.json({ 
               success: true, 
@@ -413,7 +463,7 @@ const server = serve({
 });
 
 // Start the import process
-function startImport(importId: string, filePath: string, force = false) {
+function startImport(importId: string, filePath: string, force = false, saveArchive = false) {
   try {
     // Check if file exists
     if (!existsSync(filePath)) {
@@ -468,13 +518,26 @@ function startImport(importId: string, filePath: string, force = false) {
         status.progress = result.totalCount;
         status.status = "completed";
         status.endTime = Date.now();
+        
+        // Save archive if requested
+        if (saveArchive && result.username) {
+          try {
+            const archivePath = await saveArchiveFile(filePath, result.username);
+            status.archivePath = archivePath;
+          } catch (saveErr) {
+            console.error("Failed to save archive:", saveErr);
+          }
+        }
+        
         importStatus.set(importId, status);
         
-        // Clean up temp file
-        try {
-          Bun.spawn(["rm", filePath]);
-        } catch (e) {
-          console.error("Failed to remove temp file:", e);
+        // Clean up temp file if not saving or if saving was successful
+        if (!saveArchive || status.archivePath) {
+          try {
+            Bun.spawn(["rm", filePath]);
+          } catch (e) {
+            console.error("Failed to remove temp file:", e);
+          }
         }
       } catch (error) {
         // Update status with error
@@ -514,7 +577,7 @@ function startImport(importId: string, filePath: string, force = false) {
 }
 
 // Start the import process for a remote file
-async function startRemoteImport(importId: string, url: string, username: string, force = false) {
+async function startRemoteImport(importId: string, url: string, username: string, force = false, saveArchive = false) {
   try {
     // Initialize import status
     importStatus.set(importId, {
@@ -571,13 +634,26 @@ async function startRemoteImport(importId: string, url: string, username: string
         status.progress = result.totalCount;
         status.status = "completed";
         status.endTime = Date.now();
+        
+        // Save archive if requested
+        if (saveArchive) {
+          try {
+            const archivePath = await saveArchiveFile(tempPath, username);
+            status.archivePath = archivePath;
+          } catch (saveErr) {
+            console.error("Failed to save archive:", saveErr);
+          }
+        }
+        
         importStatus.set(importId, status);
         
-        // Clean up temp file
-        try {
-          Bun.spawn(["rm", tempPath]);
-        } catch (e) {
-          console.error("Failed to remove temp file:", e);
+        // Clean up temp file if not saving or if saving was successful
+        if (!saveArchive || status.archivePath) {
+          try {
+            Bun.spawn(["rm", tempPath]);
+          } catch (e) {
+            console.error("Failed to remove temp file:", e);
+          }
         }
       } catch (error) {
         // Update status with error
@@ -614,6 +690,23 @@ async function startRemoteImport(importId: string, url: string, username: string
       endTime: Date.now()
     });
   }
+}
+
+// Function to save archive file to permanent storage
+async function saveArchiveFile(tempPath: string, username: string): Promise<string> {
+  // Ensure archives directory exists
+  await Bun.spawn(["mkdir", "-p", ARCHIVES_DIR]);
+  
+  // Create a filename with timestamp to avoid overwriting
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${username.toLowerCase()}_${timestamp}.json`;
+  const archivePath = join(ARCHIVES_DIR, filename);
+  
+  // Copy the file
+  await Bun.spawn(["cp", tempPath, archivePath]);
+  
+  console.log(`Saved archive for ${username} to ${archivePath}`);
+  return archivePath;
 }
 
 console.log(`Server is running on http://localhost:${server.port}`);
