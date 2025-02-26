@@ -1,6 +1,6 @@
-import { currentDialog, nResults, handleSearch, debugMode } from "@/ui/src/store/signals";
+import { currentDialog, handleSearch, debugMode } from "@/ui/src/store/signals";
 import { handleClearCache } from "@/ui/src/store/userCache";
-import { UserSelect } from "@/ui/src/components/UserSelect";
+import { deleteAllEmbeddings } from "@/ui/src/store/signals";
 
 export function SettingsDialog() {
   if (currentDialog.value !== 'settings') return null;
@@ -19,37 +19,12 @@ export function SettingsDialog() {
         }
       }}
       aria-modal="true"
-      aria-label="Search Settings"
+      aria-label="Settings"
     >
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-[400px] max-w-[90vw]">
-        <h2 class="text-lg font-bold mb-4">Search Settings</h2>
+      <div class="bg-white/95 dark:bg-gray-800/95 rounded-lg shadow-xl p-5 w-[400px] max-w-[90vw]">
+        <h2 class="text-lg font-bold mb-4">Settings</h2>
 
-        <div class="space-y-4">
-          <div>
-            <label htmlFor="resultsPerSearch" class="block text-sm font-medium mb-1">
-              Results per search
-            </label>
-            <input
-              id="resultsPerSearch"
-              type="number"
-              min="1"
-              max="100"
-              value={nResults.value}
-              onInput={(e) => {
-                const val = Number.parseInt(e.currentTarget.value);
-                if (val > 0 && val <= 100) {
-                  nResults.value = val;
-                }
-              }}
-              class="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="userFilter" class="block text-sm font-medium mb-1">Filter by user</label>
-            <UserSelect />
-          </div>
-
+        <div class="space-y-3">
           <div class="flex items-center">
             <input
               id="debugMode"
@@ -58,7 +33,7 @@ export function SettingsDialog() {
               onChange={() => {
                 debugMode.value = !debugMode.value;
               }}
-              class="h-4 w-4 text-blue-500 rounded border-gray-300 focus:ring-blue-500"
+              class="h-4 w-4 text-blue-400/60 rounded border-gray-300 focus:ring-blue-400/60"
             />
             <label htmlFor="debugMode" class="ml-2 block text-sm">
               Debug Mode
@@ -71,7 +46,7 @@ export function SettingsDialog() {
           <div>
             <button
               onClick={handleClearCache}
-              class="w-full px-4 py-2 bg-red-500/80 text-white rounded-lg hover:bg-red-600"
+              class="w-full px-4 py-2 bg-red-400/60 text-white rounded-lg hover:bg-red-400/70"
             >
               Clear User Cache
             </button>
@@ -85,7 +60,7 @@ export function SettingsDialog() {
               onClick={() => {
                 currentDialog.value = 'import';
               }}
-              class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              class="w-full px-4 py-2 bg-blue-400/70 text-white rounded-lg hover:bg-blue-400/80"
             >
               Import Tweets
             </button>
@@ -93,21 +68,33 @@ export function SettingsDialog() {
               Import tweets from a Twitter/X archive
             </p>
           </div>
+          
+          <div>
+            <button
+              onClick={deleteAllEmbeddings}
+              class="w-full px-4 py-2 bg-red-400/60 text-white rounded-lg hover:bg-red-400/70"
+            >
+              Delete All Embeddings
+            </button>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Permanently delete all imported tweet embeddings
+            </p>
+          </div>
         </div>
 
-        <div class="mt-6 flex justify-end gap-2">
+        <div class="mt-5 flex justify-end gap-2">
           <button
             onClick={() => {
               currentDialog.value = null;
               handleSearch();
             }}
-            class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            class="px-4 py-2 bg-blue-400/70 text-white rounded-lg hover:bg-blue-400/80"
           >
             Apply
           </button>
           <button
             onClick={() => (currentDialog.value = null)}
-            class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+            class="px-4 py-2 bg-gray-100/90 dark:bg-gray-700/90 rounded-lg hover:bg-gray-200/90 dark:hover:bg-gray-600/90"
           >
             Cancel
           </button>

@@ -90,11 +90,64 @@ export function formatFileSize(bytes: number): string {
 }
 
 function ImportTweetsLoadingStatusBar() {
+	// Add signals for tracking time and performance
+	const elapsedTime = useSignal(0);
+	const estimatedTimeRemaining = useSignal(0);
+	const processingRate = useSignal(0);
+	
+	// Update elapsed time and estimates every second
+	useEffect(() => {
+		if (!importStatus.value || importStatus.value.status !== "processing") return;
+		
+		// Calculate initial elapsed time
+		const startTime = importStatus.value.startTime;
+		elapsedTime.value = Math.floor((Date.now() - startTime) / 1000);
+		
+		const interval = setInterval(() => {
+			// Update elapsed time
+			if (!importStatus.value) return;
+			
+			elapsedTime.value = Math.floor((Date.now() - startTime) / 1000);
+			
+			// Calculate processing rate (tweets per second)
+			if (elapsedTime.value > 0 && importStatus.value) {
+				processingRate.value = importStatus.value.progress / elapsedTime.value;
+			}
+			
+			// Calculate estimated time remaining
+			if (processingRate.value > 0 && importStatus.value) {
+				const remainingTweets = importStatus.value.total - importStatus.value.progress;
+				estimatedTimeRemaining.value = Math.floor(remainingTweets / processingRate.value);
+			}
+		}, 1000);
+		
+		return () => clearInterval(interval);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [importStatus.value, elapsedTime, estimatedTimeRemaining, processingRate]);
+	
+	// Format time as mm:ss or hh:mm:ss
+	const formatTime = (secondsInput: number) => {
+		const seconds = secondsInput < 0 ? 0 : secondsInput;
+		const hours = Math.floor(seconds / 3600);
+		const minutes = Math.floor((seconds % 3600) / 60);
+		const secs = seconds % 60;
+		
+		if (hours > 0) {
+			return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+		}
+		return `${minutes}:${secs.toString().padStart(2, '0')}`;
+	};
+
 	if (
 		isMinimized.value &&
 		importLoading.value &&
 		importStatus.value?.status === "processing"
 	) {
+		// Calculate progress percentage
+		const progressPercent = importStatus.value.total > 0 
+			? (importStatus.value.progress / importStatus.value.total) * 100 
+			: 0;
+			
 		return (
 			<div className="p-2">
 				<div className="space-y-1">
@@ -102,13 +155,29 @@ function ImportTweetsLoadingStatusBar() {
 						<div
 							className="bg-blue-600 h-2 rounded-full transition-all duration-300"
 							style={{
-								width: `${importStatus.value.total > 0 ? (importStatus.value.progress / importStatus.value.total) * 100 : 0}%`,
+								width: `${progressPercent}%`,
 							}}
 						/>
 					</div>
-					<p className="text-xs text-gray-500 dark:text-gray-400">
-						{importStatus.value.progress} / {importStatus.value.total} tweets
-					</p>
+					<div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+						<span>
+							{importStatus.value.progress} / {importStatus.value.total} tweets
+							({progressPercent.toFixed(1)}%)
+						</span>
+						<span>
+							{processingRate.value > 0 && (
+								<>
+									{processingRate.value.toFixed(1)} tweets/sec
+								</>
+							)}
+						</span>
+					</div>
+					<div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+						<span>Elapsed: {formatTime(elapsedTime.value)}</span>
+						{estimatedTimeRemaining.value > 0 && (
+							<span>Remaining: ~{formatTime(estimatedTimeRemaining.value)}</span>
+						)}
+					</div>
 				</div>
 			</div>
 		);

@@ -27,14 +27,26 @@ export const deleteEmbeddingsUrl = "http://localhost:3001/api/delete-embeddings"
 export const query = signal("love");
 export const selectedUser = signal<string>("");
 export const nResults = signal(10);
+
+// New search filter signals
+export type TweetType = "all" | "standalone" | "self_thread" | "self_thread_continuation" | "external_reply" | "quote" | "retweet";
+export const selectedTweetType = signal<TweetType>("all");
+export const containsQuestion = signal<boolean | null>(null); // null means don't filter
+export const dateRangeStart = signal<string | null>(null);
+export const dateRangeEnd = signal<string | null>(null);
+export const showFilters = signal<boolean>(false); // Toggle for filter panel visibility
+
+// Search results
 export const results = signal<
   Array<{
     text: string;
     full_text?: string;
     distance: number;
     username: string;
-    date: string;
+    date: number;
     id: string;
+    tweet_type?: string;
+    contains_question?: boolean;
   }>
 >([]);
 export const loading = signal(false);
@@ -48,7 +60,7 @@ export const selectedTweetIndex = signal<number>(-1);
 
 // Theme control
 export const isDarkMode = signal(localStorage.getItem('theme') === 'dark');
-export const headerHeight = signal(119);
+export const headerHeight = signal(0); // Will be measured dynamically
 
 // Import related signals
 export const importStatus = signal<{
@@ -60,6 +72,10 @@ export const importStatus = signal<{
   error?: string;
   startTime: number;
   endTime?: number;
+  performanceMetrics?: {
+    tweetsPerSecond: number;
+    averageChunkTweetsPerSecond: number;
+  };
 } | null>(null);
 export const importLoading = signal(false);
 export const importError = signal<string | null>(null);
@@ -100,6 +116,20 @@ export function toggleDialog(dialog: 'settings' | 'shortcuts' | 'import') {
   }
 }
 
+// Toggle search filters panel
+export function toggleFilters() {
+  showFilters.value = !showFilters.value;
+}
+
+// Reset all filters to default values
+export function resetFilters() {
+  selectedUser.value = "";
+  selectedTweetType.value = "all";
+  containsQuestion.value = null;
+  dateRangeStart.value = null;
+  dateRangeEnd.value = null;
+}
+
 // Define a type for search results from the API
 interface SearchResult {
   text: string;
@@ -108,6 +138,8 @@ interface SearchResult {
   username: string;
   date: string;
   id: string;
+  tweet_type?: string;
+  contains_question?: boolean;
 }
 
 // Handle search
@@ -121,6 +153,35 @@ export const handleSearch = async () => {
   loading.value = true;
   error.value = null;
   try {
+    // Prepare search filters
+    const filters: {
+      username?: string;
+      tweet_type?: string;
+      contains_question?: boolean;
+      date_start?: number;
+      date_end?: number;
+    } = {};
+    
+    if (selectedUser.value) {
+      filters.username = selectedUser.value;
+    }
+    
+    if (selectedTweetType.value !== "all") {
+      filters.tweet_type = selectedTweetType.value;
+    }
+    
+    if (containsQuestion.value !== null) {
+      filters.contains_question = containsQuestion.value;
+    }
+    
+    if (dateRangeStart.value) {
+      filters.date_start = new Date(dateRangeStart.value).getTime();
+    }
+    
+    if (dateRangeEnd.value) {
+      filters.date_end = new Date(dateRangeEnd.value).getTime();
+    }
+
     const response = await fetch(embeddingsUrl, {
       method: "POST",
       headers: {
@@ -128,7 +189,7 @@ export const handleSearch = async () => {
       },
       body: JSON.stringify({
         query: query.value,
-        username: selectedUser.value || undefined,
+        filters,
         nResults: nResults.value,
       }),
     });

@@ -10,6 +10,7 @@ import {
 	currentDialog,
 } from "@/ui/src/store/signals";
 import { saveArchive } from "@/ui/src/components/import-tweets/importSignals";
+import { ImportIcon, InfoIcon } from "@/ui/src/components/Icons";
 
 export function ImportFileMode() {
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -147,20 +148,7 @@ export function ImportFileMode() {
 					onChange={handleFileChange}
 				/>
 
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="1.5"
-					stroke="currentColor"
-					className="w-10 h-10 mx-auto text-gray-400 dark:text-gray-500 mb-3"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-					/>
-				</svg>
+				<ImportIcon className="w-10 h-10 mx-auto text-gray-400 dark:text-gray-500 mb-3" />
 
 				<p className="mb-1 text-sm text-gray-500 dark:text-gray-400">
 					<span className="font-semibold">Click to upload</span> or
@@ -188,18 +176,7 @@ export function ImportFileMode() {
 					className="text-sm flex items-center"
 				>
 					Save archive to disk
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-						className="w-4 h-4 ml-1 text-gray-500 group-hover:text-blue-500 transition-colors"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-							clip-rule="evenodd"
-						/>
-					</svg>
+					<InfoIcon className="w-4 h-4 ml-1 text-gray-500 group-hover:text-blue-500 transition-colors" />
 				</label>
 				<div className="absolute bottom-full left-0 mb-2 w-64 bg-gray-900 text-white text-xs rounded p-2 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
 					Archives are saved to:{" "}

@@ -4,6 +4,7 @@ import { selectedUser, handleSearch, twitterUsers } from "@/ui/src/store/signals
 import { fetchTwitterUsers } from "@/ui/src/store/userCache";
 import type { TwitterUser } from "@/ui/src/store/userCache";
 import { UserDropdown } from "@/ui/src/components/UserDropdown";
+import { ChevronDownIcon } from "@/ui/src/components/Icons";
 
 export function UserSelect() {
   const isOpen = useSignal(false);
@@ -22,22 +23,15 @@ export function UserSelect() {
   };
 
   return (
-    <div class="relative user-select-container">
+    <div class="relative user-select-container w-full">
       <button
         onClick={() => {
           isOpen.value = !isOpen.value;
         }}
-        class="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        class="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[150px]"
       >
-        <span>{selectedUser.value ? `@${selectedUser.value}` : "All users"}</span>
-        <svg 
-          xmlns="http://www.w3.org/2000/svg" 
-          viewBox="0 0 20 20" 
-          fill="currentColor" 
-          class={`w-4 h-4 transition-transform ${isOpen.value ? 'rotate-180' : ''}`}
-        >
-          <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-        </svg>
+        <span class="truncate">{selectedUser.value ? `@${selectedUser.value}` : "All users"}</span>
+        <ChevronDownIcon className={`w-4 h-4 flex-shrink-0 transition-transform ${isOpen.value ? 'rotate-180' : ''}`} />
       </button>
 
       <UserDropdown
@@ -46,7 +40,7 @@ export function UserSelect() {
         onSelect={handleUserSelect}
         showAllOption={true}
         containerClassName="user-select-container"
-        dropdownClassName="w-64"
+        dropdownClassName="w-full min-w-[150px]"
       />
     </div>
   );

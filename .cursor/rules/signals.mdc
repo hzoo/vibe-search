@@ -3,12 +3,11 @@ description: global state management
 globs: *.ts
 alwaysApply: false
 ---
-## signals usage
+## signals usage (global, across files)
 ```ts
 import { signal } from "@preact/signals-react";
-const count = signal(0);
+export const count = signal(0);
 
-// access with .value, can be used in components
-// think about splitting components to save re-renders
+// access with .value, can be used in preact components
 <button onClick={() => count.value++}>{count.value}</button>;
 ```

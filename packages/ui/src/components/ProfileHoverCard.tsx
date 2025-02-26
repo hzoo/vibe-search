@@ -1,4 +1,5 @@
 import type { TwitterUser } from "@/ui/src/store/userCache";
+import { LocationIcon, WebsiteIcon } from "@/ui/src/components/Icons";
 
 interface ProfileHoverCardProps {
   userData: TwitterUser | null;
@@ -40,17 +41,13 @@ export function ProfileHoverCard({
       <div class="mt-3 space-y-1">
         {userData.location && (
           <div class="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-              <path fill-rule="evenodd" d="M9.69 18.933l.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 00.281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 103 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 002.273 1.765 11.842 11.842 0 00.976.544l.062.029.018.008.006.003zM10 11.25a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" clip-rule="evenodd" />
-            </svg>
+            <LocationIcon />
             <span>{userData.location}</span>
           </div>
         )}
         {userData.website && (
           <div class="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-              <path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clip-rule="evenodd" />
-            </svg>
+            <WebsiteIcon />
             <a 
               href={userData.website} 
               target="_blank" 

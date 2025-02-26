@@ -1,0 +1,6 @@
+---
+description: use of svg icons
+globs: *.tsx
+alwaysApply: false
+---
+Always check to see if [Icons.tsx](mdc:packages/ui/src/components/Icons.tsx) has the icon, otherwise make a new one and import from that file

@@ -1,5 +1,5 @@
 import { useSignal } from "@preact/signals";
-import { useEffect } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import { useSignalEffect } from "@preact/signals";
 import {
 	importUrl,
@@ -20,6 +20,8 @@ import {
 import type { TwitterUser } from "@/ui/src/store/userCache";
 import { existingArchives, checkArchives, formatFileSize, type ArchivesResponse } from "./ImportDialog";
 import { saveArchive } from "@/ui/src/components/import-tweets/importSignals";
+import { SpinnerIcon, UserIcon, ChevronDownIcon, InfoIcon } from "@/ui/src/components/Icons";
+import { signal } from "@preact/signals";
 
 interface ArchiveInfo {
 	filename: string;
@@ -31,6 +33,29 @@ interface ImportUsernameModeProps {
 	usernameInput: { value: string };
 }
 
+// Add a signal to store the performance metrics
+const performanceMetrics = signal<{
+	averageTweetsPerSecond: number;
+	lastUpdated: string;
+} | null>(null);
+
+// Function to fetch performance metrics from the server
+async function fetchPerformanceMetrics() {
+	try {
+		// Use the correct endpoint that matches the server implementation
+		const response = await fetch(`${importUrl}/performance`);
+		if (response.ok) {
+			const data = await response.json();
+			performanceMetrics.value = data;
+			console.log("Loaded performance metrics:", data);
+		} else {
+			console.log("Failed to load performance metrics, status:", response.status);
+		}
+	} catch (error) {
+		console.error("Failed to fetch performance metrics:", error);
+	}
+}
+
 export function ImportUsernameMode({ 
 	usernameInput, 
 }: ImportUsernameModeProps) {
@@ -39,13 +64,15 @@ export function ImportUsernameMode({
 	const filteredUsers = useSignal<TwitterUser[]>([]);
 	const selectedIndex = useSignal(-1);
 	const forceImport = useSignal(false);
+	const forceDownload = useSignal(false);
+	const inputRef = useRef<HTMLInputElement>(null);
 
 	// Filter users when search query changes
 	useSignalEffect(() => {
 		if (userSearchQuery.value.trim()) {
-			filteredUsers.value = searchTwitterUsers(userSearchQuery.value);
+			filteredUsers.value = searchTwitterUsers(userSearchQuery.value) as TwitterUser[];
 		} else {
-			filteredUsers.value = twitterUsers.value.slice(0, 25); // Limit to first 25 users
+			filteredUsers.value = twitterUsers.value.slice(0, 25) as TwitterUser[]; // Limit to first 25 users
 		}
 	});
 
@@ -131,11 +158,15 @@ export function ImportUsernameMode({
 		}
 	};
 
-	const handleUsernameImport = async () => {
-		if (!usernameInput.value.trim()) return;
+	const handleImport = async () => {
+		if (!usernameInput.value.trim()) {
+			importError.value = "Please enter a username";
+			return;
+		}
 
 		importLoading.value = true;
 		importError.value = null;
+		importStatus.value = null;
 
 		try {
 			const response = await fetch(`${importUrl}/username`, {
@@ -147,22 +178,25 @@ export function ImportUsernameMode({
 					username: usernameInput.value.trim(),
 					force: forceImport.value,
 					saveArchive: saveArchive.value,
+					forceDownload: forceDownload.value
 				}),
 			});
 
 			if (!response.ok) {
+				const errorData = await response.json();
 				throw new Error(
-					`Import failed: ${response.status} ${response.statusText}`,
+					errorData.error || `Import failed: ${response.status} ${response.statusText}`
 				);
 			}
 
 			const data = await response.json();
-
+			
 			if (data.importId) {
 				// Start polling for status
 				pollImportStatus(data.importId);
 			} else {
-				throw new Error("No import ID returned from server");
+				importError.value = "No import ID returned";
+				importLoading.value = false;
 			}
 		} catch (err) {
 			importError.value = err instanceof Error ? err.message : String(err);
@@ -207,6 +241,33 @@ export function ImportUsernameMode({
 		checkStatus();
 	};
 
+	// focus
+	useEffect(() => {
+		if (inputRef.current) {
+			inputRef.current.focus();
+		}
+	}, []);
+
+	// In the ImportUsernameMode component, add a useEffect to fetch performance metrics
+	useEffect(() => {
+		// Fetch performance metrics when the component mounts
+		fetchPerformanceMetrics();
+	}, []);
+
+	// Reset forceDownload when username changes
+	useEffect(() => {
+		// Reset force download when username changes
+		forceDownload.value = false;
+		
+		// Check for archives when username changes
+		if (usernameInput.value.trim()) {
+			checkArchives(usernameInput.value.trim());
+		} else {
+			existingArchives.value = null;
+		}
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [usernameInput.value, forceDownload]); // Added forceDownload to fix linter error
+
 	return (
 		<div className="space-y-3">
 			<div>
@@ -227,26 +288,7 @@ export function ImportUsernameMode({
 								{twitterUsersLoading.value &&
 								twitterUsers.value.length === 0 ? (
 									<div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center">
-										<svg
-											className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-500"
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-										>
-											<circle
-												className="opacity-25"
-												cx="12"
-												cy="12"
-												r="10"
-												stroke="currentColor"
-												stroke-width="4"
-											/>
-											<path
-												className="opacity-75"
-												fill="currentColor"
-												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-											/>
-										</svg>
+										<SpinnerIcon className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-500" />
 										Loading users...
 									</div>
 								) : filteredUsers.value.length > 0 ? (
@@ -258,24 +300,16 @@ export function ImportUsernameMode({
 											onClick={() => {
 												usernameInput.value = user.username;
 												showUserDropdown.value = false;
+												checkArchives(usernameInput.value.trim()).then((archives: ArchivesResponse | null) => {
+													existingArchives.value = archives;
+												});
 											}}
 											aria-selected={
 												selectedIndex.value === index
 											}
 										>
 											<div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 mr-2 flex items-center justify-center overflow-hidden">
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													viewBox="0 0 24 24"
-													fill="currentColor"
-													className="w-4 h-4 text-gray-500"
-												>
-													<path
-														fill-rule="evenodd"
-														d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z"
-														clip-rule="evenodd"
-													/>
-												</svg>
+												<UserIcon className="w-4 h-4 text-gray-500" />
 											</div>
 											<div className="min-w-0 flex-1">
 												<div className="flex items-center">
@@ -312,12 +346,12 @@ export function ImportUsernameMode({
 					)}
 					<div className="relative">
 						<input
+							ref={inputRef}
 							id="username-input"
 							type="text"
 							className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 username-input"
 							placeholder="e.g. elonmusk"
 							value={usernameInput.value}
-							autofocus
 							onInput={(e) => {
 								const value = (e.target as HTMLInputElement)
 									.value;
@@ -353,18 +387,7 @@ export function ImportUsernameMode({
 							}
 							className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
 						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 20 20"
-								fill="currentColor"
-								className={`w-5 h-5 transition-transform ${showUserDropdown.value ? "rotate-180" : ""}`}
-							>
-								<path
-									fill-rule="evenodd"
-									d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-									clip-rule="evenodd"
-								/>
-							</svg>
+							<ChevronDownIcon className={`w-5 h-5 transition-transform ${showUserDropdown.value ? "rotate-180" : ""}`} />
 						</button>
 					</div>
 				</div>
@@ -388,6 +411,18 @@ export function ImportUsernameMode({
 						Only tweets newer than the latest tweet date will be
 						imported.
 					</p>
+					
+					{/* Import time estimate inside the blue section */}
+					{performanceMetrics.value && (
+						<div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-700">
+							<p className="font-medium text-blue-800 dark:text-blue-300">
+								Import time estimate
+							</p>
+							<p>
+								Processing speed: ~{performanceMetrics.value.averageTweetsPerSecond.toFixed(1)} tweets/sec
+							</p>
+						</div>
+					)}
 				</div>
 			)}
 
@@ -416,6 +451,21 @@ export function ImportUsernameMode({
 							</div>
 						))}
 					</div>
+					<p className="mt-2 text-green-700 dark:text-green-400 font-medium">
+						This archive will be used automatically (no download needed)
+					</p>
+					
+					{/* Import time estimate inside the green section */}
+					{performanceMetrics.value && !importHistory.value && (
+						<div className="mt-2 pt-2 border-t border-green-200 dark:border-green-700">
+							<p className="font-medium text-green-800 dark:text-green-300">
+								Import time estimate
+							</p>
+							<p>
+								Processing speed: ~{performanceMetrics.value.averageTweetsPerSecond.toFixed(1)} tweets/sec
+							</p>
+						</div>
+					)}
 				</div>
 			)}
 
@@ -444,6 +494,32 @@ export function ImportUsernameMode({
 				</label>
 			</div>
 
+			{existingArchives.value?.exists && (
+				<div className="flex items-center group relative">
+					<input
+						type="checkbox"
+						id="force-download"
+						className="mr-2"
+						checked={forceDownload.value}
+						onChange={(e) =>
+							(forceDownload.value = (
+								e.target as HTMLInputElement
+							).checked)
+						}
+					/>
+					<label
+						htmlFor="force-download"
+						className="text-sm flex items-center"
+					>
+						Force download fresh archive
+						<InfoIcon className="w-4 h-4 ml-1 text-gray-500 group-hover:text-blue-500 transition-colors" />
+					</label>
+					<div className="absolute bottom-full left-0 mb-2 w-64 bg-gray-900 text-white text-xs rounded p-2 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+						By default, existing archives are used. Check this to download a fresh archive instead.
+					</div>
+				</div>
+			)}
+
 			<div className="flex items-center group relative">
 				<input
 					type="checkbox"
@@ -455,36 +531,32 @@ export function ImportUsernameMode({
 							e.target as HTMLInputElement
 						).checked)
 					}
+					disabled={existingArchives.value?.exists && !forceDownload.value}
 				/>
 				<label
 					htmlFor="save-archive"
-					className="text-sm flex items-center"
+					className={`text-sm flex items-center ${existingArchives.value?.exists && !forceDownload.value ? 'text-gray-400 dark:text-gray-600' : ''}`}
 				>
 					Save archive to disk
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-						className="w-4 h-4 ml-1 text-gray-500 group-hover:text-blue-500 transition-colors"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-							clip-rule="evenodd"
-						/>
-					</svg>
+					<InfoIcon className="w-4 h-4 ml-1 text-gray-500 group-hover:text-blue-500 transition-colors" />
 				</label>
 				<div className="absolute bottom-full left-0 mb-2 w-64 bg-gray-900 text-white text-xs rounded p-2 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-					Archives are saved to:{" "}
-					<code className="bg-gray-800 px-1 py-0.5 rounded">
-						packages/server/archives/username_timestamp.json
-					</code>
+					{existingArchives.value?.exists && !forceDownload.value
+						? "Not needed - already using a saved archive"
+						: existingArchives.value?.exists 
+							? "Only applies when downloading a fresh archive" 
+							: "Archives are saved to:"} {" "}
+					{!existingArchives.value?.exists || forceDownload.value ? (
+						<code className="bg-gray-800 px-1 py-0.5 rounded">
+							packages/server/archives/username_timestamp.json
+						</code>
+					) : null}
 				</div>
 			</div>
 
 			<button
 				className="w-full px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-				onClick={handleUsernameImport}
+				onClick={handleImport}
 				disabled={
 					!usernameInput.value.trim() || importLoading.value
 				}

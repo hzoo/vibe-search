@@ -11,6 +11,8 @@ import { cleanTweet, type TweetPreprocessingOptions } from "./tweet-preprocessor
 const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
 // Archives directory path
 const ARCHIVES_DIR = join(import.meta.dir, "archives");
+// Performance metrics path
+const PERFORMANCE_METRICS_PATH = join(import.meta.dir, "import-performance.json");
 
 // Configure tweet preprocessing options for search queries
 const SEARCH_PREPROCESSING_OPTIONS: TweetPreprocessingOptions = {
@@ -93,12 +95,21 @@ interface SearchParams {
   limit: number;
   with_payload: boolean;
   filter?: {
-    must: Array<{
-      key: string;
-      match: {
-        value: string;
-      };
-    }>;
+    must: Array<
+      | {
+          key: string;
+          match: {
+            value: string | boolean;
+          };
+        }
+      | {
+          key: string;
+          range: {
+            gte?: number;
+            lte?: number;
+          };
+        }
+    >;
   };
   params?: {
     quantization: {
@@ -119,6 +130,10 @@ const importStatus = new Map<string, {
   startTime: number;
   endTime?: number;
   archivePath?: string; // Add path to saved archive
+  performanceMetrics?: {
+    tweetsPerSecond: number;
+    averageChunkTweetsPerSecond: number;
+  };
 }>();
 
 // Initialize the embedding model
@@ -208,7 +223,7 @@ const server = serve({
     // Search API endpoint
     if (req.url.includes("/api/search")) {
       try {
-        const { query, username, nResults = 5 } = await req.json();
+        const { query, filters = {}, nResults = 5 } = await req.json();
         
         if (!query) {
           return Response.json(
@@ -227,8 +242,6 @@ const server = serve({
         
         // Preprocess the query text
         const cleanedQuery = cleanTweet(query, SEARCH_PREPROCESSING_OPTIONS);
-        // console.log(`Original query: "${query}"`);
-        // console.log(`Cleaned query: "${cleanedQuery}"`);
         
         // If the query is empty after cleaning, return an error
         if (!cleanedQuery) {
@@ -255,17 +268,62 @@ const server = serve({
           }
         };
         
-        // Add filter if username is provided
-        if (username) {
+        // Add filters if provided
+        const filterConditions = [];
+        
+        // Username filter
+        if (filters.username) {
+          filterConditions.push({
+            key: "username",
+            match: {
+              value: filters.username,
+            },
+          });
+        }
+        
+        // Tweet type filter
+        if (filters.tweet_type) {
+          filterConditions.push({
+            key: "tweet_type",
+            match: {
+              value: filters.tweet_type,
+            },
+          });
+        }
+        
+        // Contains question filter
+        if (filters.contains_question !== undefined) {
+          filterConditions.push({
+            key: "contains_question",
+            match: {
+              value: filters.contains_question,
+            },
+          });
+        }
+        
+        // Date range filters
+        if (filters.date_start) {
+          filterConditions.push({
+            key: "created_at_timestamp",
+            range: {
+              gte: filters.date_start,
+            },
+          });
+        }
+        
+        if (filters.date_end) {
+          filterConditions.push({
+            key: "created_at_timestamp",
+            range: {
+              lte: filters.date_end,
+            },
+          });
+        }
+        
+        // Apply filters if any
+        if (filterConditions.length > 0) {
           searchParams.filter = {
-            must: [
-              {
-                key: "username",
-                match: {
-                  value: username,
-                },
-              },
-            ],
+            must: filterConditions,
           };
         }
         
@@ -274,14 +332,26 @@ const server = serve({
           const results = await client.search("tweets", searchParams);
           
           // Transform the results into a simpler format
-          const simplifiedResults = results.map((result) => ({
-            text: result.payload?.text || "",
-            full_text: result.payload?.full_text || result.payload?.text || "",
-            distance: result.score || 0,
-            username: result.payload?.username || "",
-            date: result.payload?.created_at || "",
-            id: result.id.toString() || ""
-          }));
+          const simplifiedResults = results.filter(r => r.payload).map((result) => {
+            const payload = result.payload as {
+              text: string;
+              full_text?: string;
+              username: string;
+              created_at_timestamp: number;
+              tweet_type?: string;
+              contains_question?: boolean;
+            };
+            return {
+              text: payload.text,
+              full_text: payload.full_text,
+              distance: result.score,
+              username: payload.username,
+              date: payload.created_at_timestamp,
+              id: result.id.toString(),
+              tweet_type: payload.tweet_type,
+              contains_question: payload.contains_question || false
+            };
+          });
 
           return Response.json(simplifiedResults, {
             headers: corsHeaders,
@@ -314,6 +384,51 @@ const server = serve({
 
     // Import API endpoint
     if (req.url.includes("/api/import")) {
+      // Performance metrics endpoint - handle this first
+      if (req.url.includes("/api/import/performance") && req.method === "GET") {
+        try {
+          // Check if metrics file exists
+          if (existsSync(PERFORMANCE_METRICS_PATH)) {
+            const content = await Bun.file(PERFORMANCE_METRICS_PATH).text();
+            if (!content.trim()) {
+              return Response.json(
+                { averageTweetsPerSecond: 100, lastUpdated: new Date().toISOString() },
+                { headers: corsHeaders }
+              );
+            }
+            
+            try {
+              const metrics = JSON.parse(content);
+              return Response.json(
+                { 
+                  averageTweetsPerSecond: metrics.averageTweetsPerSecond || 100,
+                  lastUpdated: new Date().toISOString()
+                },
+                { headers: corsHeaders }
+              );
+            } catch (parseError) {
+              console.error("JSON parse error in performance metrics:", parseError);
+              return Response.json(
+                { averageTweetsPerSecond: 100, lastUpdated: new Date().toISOString() },
+                { headers: corsHeaders }
+              );
+            }
+          } else {
+            // No metrics file yet, return default values
+            return Response.json(
+              { averageTweetsPerSecond: 100, lastUpdated: new Date().toISOString() },
+              { headers: corsHeaders }
+            );
+          }
+        } catch (error) {
+          console.error("Error loading performance metrics:", error);
+          return Response.json(
+            { error: "Failed to load performance metrics" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+      }
+      
       // Check import history for a username
       if (req.url.includes("/api/import/history") && req.method === "GET") {
         const url = new URL(req.url);
@@ -343,6 +458,39 @@ const server = serve({
         }
       }
       
+      // Check if this is a username import via JSON
+      if (req.url.includes("/api/import/username") && req.method === "POST") {
+        try {
+          const data = await req.json();
+          const { username, force = false, saveArchive = false, forceDownload = false } = data;
+          
+          if (!username) {
+            return Response.json(
+              { error: "Username is required" },
+              { status: 400, headers: corsHeaders }
+            );
+          }
+          
+          const importId = randomUUIDv7();
+          const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username}/archive.json`;
+          
+          // Start the import process for remote file
+          startRemoteImport(importId, archiveUrl, username, force, saveArchive, forceDownload);
+          
+          return Response.json({ 
+            success: true, 
+            importId,
+            message: "Remote import started" 
+          }, { headers: corsHeaders });
+        } catch (error) {
+          console.error("Import error:", error);
+          return Response.json(
+            { error: "Import failed" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+      }
+      
       // Handle import status check
       if (req.method === "GET") {
         const url = new URL(req.url);
@@ -366,40 +514,8 @@ const server = serve({
         return Response.json(status, { headers: corsHeaders });
       }
       
+      // Handle regular form data upload
       if (req.method === "POST") {
-        // Check if this is a username import via JSON
-        if (req.url.includes("/api/import/username")) {
-          try {
-            const { username, force = false, saveArchive = false } = await req.json();
-            
-            if (!username) {
-              return Response.json(
-                { error: "Username is required" },
-                { status: 400, headers: corsHeaders }
-              );
-            }
-            
-            const importId = randomUUIDv7();
-            const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username.toLowerCase()}/archive.json`;
-            
-            // Start the import process for remote file
-            startRemoteImport(importId, archiveUrl, username, force, saveArchive);
-            
-            return Response.json({ 
-              success: true, 
-              importId,
-              message: "Remote import started" 
-            }, { headers: corsHeaders });
-          } catch (error) {
-            console.error("Username import error:", error);
-            return Response.json(
-              { error: "Username import failed" },
-              { status: 500, headers: corsHeaders }
-            );
-          }
-        }
-        
-        // Handle regular form data upload
         try {
           const formData = await req.formData();
           const file = formData.get("file") as File | null;
@@ -518,6 +634,13 @@ function startImport(importId: string, filePath: string, force = false, saveArch
         status.progress = result.totalCount;
         status.status = "completed";
         status.endTime = Date.now();
+        // Add performance metrics
+        if (result.performanceMetrics) {
+          status.performanceMetrics = {
+            tweetsPerSecond: result.performanceMetrics.tweetsPerSecond,
+            averageChunkTweetsPerSecond: result.performanceMetrics.averageChunkTweetsPerSecond
+          };
+        }
         
         // Save archive if requested
         if (saveArchive && result.username) {
@@ -577,7 +700,14 @@ function startImport(importId: string, filePath: string, force = false, saveArch
 }
 
 // Start the import process for a remote file
-async function startRemoteImport(importId: string, url: string, username: string, force = false, saveArchive = false) {
+async function startRemoteImport(
+  importId: string, 
+  url: string, 
+  username: string, 
+  force = false, 
+  saveArchive = false,
+  forceDownload = false
+) {
   try {
     // Initialize import status
     importStatus.set(importId, {
@@ -589,27 +719,46 @@ async function startRemoteImport(importId: string, url: string, username: string
       startTime: Date.now()
     });
     
-    // Update status to downloading
+    // Update status to processing
     const status = importStatus.get(importId)!;
     status.status = "processing";
     importStatus.set(importId, status);
     
-    // Download the file
-    const response = await fetch(url);
+    // Check if we have a local archive for this username
+    const archives = checkArchivesForUsername(username);
+    let tempPath = "";
     
-    if (!response.ok) {
-      throw new Error(`Failed to download archive: ${response.status} ${response.statusText}`);
+    if (archives.exists && archives.archives.length > 0 && !forceDownload) {
+      console.log(`Found local archive for ${username}, using most recent one`);
+      // Use the most recent archive (they're already sorted by date)
+      const mostRecentArchive = archives.archives[0];
+      tempPath = join(ARCHIVES_DIR, mostRecentArchive.filename);
+      
+      console.log(`Using local archive: ${tempPath}`);
+    } else {
+      // No local archive or force download requested
+      const downloadReason = forceDownload ? "force download requested" : "no local archive found";
+      console.log(`${downloadReason} for ${username}, downloading from ${url}`);
+      
+      // Download the file
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download archive: ${response.status} ${response.statusText}`);
+      }
+      
+      // Save to temp file
+      tempPath = join(import.meta.dir, "temp", `${importId}.json`);
+      
+      // Ensure temp directory exists
+      Bun.spawn(["mkdir", "-p", join(import.meta.dir, "temp")]);
+      
+      // Save the downloaded file
+      const buffer = await response.arrayBuffer();
+      await Bun.write(tempPath, buffer);
+      
+      console.log(`Downloaded archive to ${tempPath}`);
     }
-    
-    // Save to temp file
-    const tempPath = join(import.meta.dir, "temp", `${importId}.json`);
-    
-    // Ensure temp directory exists
-    await Bun.spawn(["mkdir", "-p", join(import.meta.dir, "temp")]);
-    
-    // Save the downloaded file
-    const buffer = await response.arrayBuffer();
-    await Bun.write(tempPath, buffer);
     
     // Start the import process directly using the library
     import("./import-tweets-qdrant.js").then(async ({ importTweets }) => {
@@ -634,9 +783,16 @@ async function startRemoteImport(importId: string, url: string, username: string
         status.progress = result.totalCount;
         status.status = "completed";
         status.endTime = Date.now();
+        // Add performance metrics
+        if (result.performanceMetrics) {
+          status.performanceMetrics = {
+            tweetsPerSecond: result.performanceMetrics.tweetsPerSecond,
+            averageChunkTweetsPerSecond: result.performanceMetrics.averageChunkTweetsPerSecond
+          };
+        }
         
-        // Save archive if requested
-        if (saveArchive) {
+        // Save archive if requested and we downloaded it (not if we used an existing archive)
+        if (saveArchive && (forceDownload || !archives.exists)) {
           try {
             const archivePath = await saveArchiveFile(tempPath, username);
             status.archivePath = archivePath;
@@ -647,8 +803,8 @@ async function startRemoteImport(importId: string, url: string, username: string
         
         importStatus.set(importId, status);
         
-        // Clean up temp file if not saving or if saving was successful
-        if (!saveArchive || status.archivePath) {
+        // Clean up temp file if not saving or if saving was successful or if we used an existing archive
+        if ((!saveArchive || status.archivePath) && (forceDownload || !archives.exists)) {
           try {
             Bun.spawn(["rm", tempPath]);
           } catch (e) {

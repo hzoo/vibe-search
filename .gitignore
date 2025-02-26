@@ -10,4 +10,5 @@ packages/bin/
 packages/qdrant-local/bin/
 packages/qdrant-local/dist
 packages/server/import-history.json
+packages/server/import-performance.json
 packages/server/temp/

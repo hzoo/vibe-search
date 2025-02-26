@@ -4,12 +4,15 @@ export function formatDate(dateString: string) {
   return date.toLocaleString();
 }
 
+
+const currentYear = new Date().getFullYear();
 // Format tweet date
-export function formatTweetDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString("en-US", {
+export function formatTweetDate(dateString: number) {
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: dateString.includes("2024") ? undefined : "numeric",
+    year: date.getFullYear() === currentYear ? undefined : "numeric",
   });
 }
 
