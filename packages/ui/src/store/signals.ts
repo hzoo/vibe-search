@@ -6,6 +6,9 @@ const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
 export const supabase = signal(createClient(supabaseUrl, supabaseKey));
 
+// Debug mode
+export const debugMode = signal(false);
+
 // API endpoints
 export const embeddingsUrl = "http://localhost:3001/api/search";
 export const importUrl = "http://localhost:3001/api/import";

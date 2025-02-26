@@ -4,6 +4,7 @@ import {
   toggleDarkMode, 
   selectedTweetIndex, 
   results, 
+  debugMode,
 } from '../store/signals';
 
 // Available keyboard shortcuts
@@ -19,6 +20,7 @@ export const shortcuts = [
   { key: '/', description: 'Focus search' },
   { key: 'Enter', description: 'Open selected tweet' },
   { key: 'Esc', description: 'Close dialog' },
+  { key: '⌥D', description: 'Toggle debug mode' },
 ];
 
 // Handle keyboard shortcuts
@@ -58,6 +60,12 @@ export function handleKeyDown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
     e.preventDefault();
     toggleDarkMode();
+  }
+  
+  // Option + D to toggle debug mode
+  if (e.altKey && e.code === "KeyD") {
+    e.preventDefault();
+    debugMode.value = !debugMode.value;
   }
   
   // / to focus search

@@ -1,4 +1,4 @@
-import { currentDialog, nResults, selectedUser, handleSearch } from "../store/signals";
+import { currentDialog, nResults, selectedUser, handleSearch, debugMode } from "../store/signals";
 import { handleClearCache } from "../store/userCache";
 import { UserSelect } from "./UserSelect";
 
@@ -48,6 +48,24 @@ export function SettingsDialog() {
           <div>
             <label htmlFor="userFilter" class="block text-sm font-medium mb-1">Filter by user</label>
             <UserSelect />
+          </div>
+
+          <div class="flex items-center">
+            <input
+              id="debugMode"
+              type="checkbox"
+              checked={debugMode.value}
+              onChange={() => {
+                debugMode.value = !debugMode.value;
+              }}
+              class="h-4 w-4 text-blue-500 rounded border-gray-300 focus:ring-blue-500"
+            />
+            <label htmlFor="debugMode" class="ml-2 block text-sm">
+              Debug Mode
+            </label>
+            <p class="ml-2 text-xs text-gray-500 dark:text-gray-400">
+              Shows embedding text for comparison
+            </p>
           </div>
 
           <div>
