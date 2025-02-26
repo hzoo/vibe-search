@@ -39,6 +39,7 @@ export const nResults = signal(10);
 export const results = signal<
   Array<{
     text: string;
+    full_text?: string;
     distance: number;
     username: string;
     date: string;
@@ -106,6 +107,7 @@ export function toggleDialog(dialog: 'settings' | 'shortcuts' | 'import') {
 // Define a type for search results from the API
 interface SearchResult {
   text: string;
+  full_text?: string;
   distance: number;
   username: string;
   date: string;
@@ -153,7 +155,8 @@ export const handleSearch = async () => {
     const json = await response.json();
     results.value = json.map((result: SearchResult) => ({
       ...result,
-      id: result.tweet_id
+      id: result.tweet_id,
+      full_text: result.full_text || result.text
     }));
     
     // After search, unfocus input and select first tweet

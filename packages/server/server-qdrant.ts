@@ -178,8 +178,8 @@ const server = serve({
         
         // Preprocess the query text
         const cleanedQuery = cleanTweet(query, SEARCH_PREPROCESSING_OPTIONS);
-        console.log(`Original query: "${query}"`);
-        console.log(`Cleaned query: "${cleanedQuery}"`);
+        // console.log(`Original query: "${query}"`);
+        // console.log(`Cleaned query: "${cleanedQuery}"`);
         
         // If the query is empty after cleaning, return an error
         if (!cleanedQuery) {
@@ -227,6 +227,7 @@ const server = serve({
           // Transform the results into a simpler format
           const simplifiedResults = results.map((result) => ({
             text: result.payload?.text || "",
+            full_text: result.payload?.full_text || result.payload?.text || "",
             distance: result.score || 0,
             username: result.payload?.username || "",
             date: result.payload?.created_at || "",
@@ -615,4 +616,4 @@ async function startRemoteImport(importId: string, url: string, username: string
   }
 }
 
-console.log(`Server is running on http://localhost:${server.port}`); 
+console.log(`Server is running on http://localhost:${server.port}`);

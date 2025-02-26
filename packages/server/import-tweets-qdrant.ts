@@ -357,7 +357,7 @@ export async function importTweets(options: ImportOptions) {
 			const startTime = performance.now();
 			
 			// Get the text content from each thread
-			const threadTexts = threads.map(t => t.text);
+			const threadTexts = threads.map(t => t?.text || "");
 			
 			// Generate embeddings directly
 				// Process texts in smaller batches to avoid memory issues
@@ -384,10 +384,11 @@ export async function importTweets(options: ImportOptions) {
 				id: randomUUIDv7(),
 				vector: embeddings[idx],
 				payload: {
-					text: thread.text,
-					username: thread.metadata.username,
-					created_at: thread.metadata.created_at,
-					tweet_id: thread.id, // Store original tweet ID in payload
+					text: thread?.text || "",
+					full_text: thread?.metadata?.full_text || thread?.text || "",
+					username: thread?.metadata?.username || "",
+					created_at: thread?.metadata?.created_at || "",
+					tweet_id: thread?.id || "", // Store original tweet ID in payload
 				},
 			}));
 
@@ -404,10 +405,13 @@ export async function importTweets(options: ImportOptions) {
 				processedCount += threads.length;
 				
 				// Add these tweet IDs to our set to prevent duplicates in future chunks
-				threads.forEach(thread => existingTweetIds.add(thread.id));
+				threads.forEach(thread => {
+					if (thread) existingTweetIds.add(thread.id);
+				});
 				
 				// Update the newest tweet date we've seen
 				for (const thread of threads) {
+					if (!thread) continue;
 					const tweetDate = new Date(thread.metadata.created_at);
 					if (!newestTweetDate || tweetDate > newestTweetDate) {
 						newestTweetDate = tweetDate;
@@ -545,6 +549,9 @@ export function buildThreads(tweets: Tweet[]) {
 
 	// Convert threads to embedable format with preprocessing
 	return threads.map((thread) => {
+		// Skip empty threads
+		if (!thread || thread.length === 0) return null;
+		
 		// Use our thread processor to clean and combine tweets
 		const threadTweets = thread.map(tweet => ({
 			text: tweet.text || "",
@@ -559,12 +566,16 @@ export function buildThreads(tweets: Tweet[]) {
 			return null;
 		}
 		
+		// Preserve the original full text for display
+		const fullText = thread.map(t => t.full_text || t.text || "").join("\n\n");
+		
 		return {
 			id: thread[0].id,
-			text: processedText,
+			text: processedText, // Processed text for embedding
 			metadata: {
 				username: thread[0].user?.username || "",
 				created_at: thread[0].created_at,
+				full_text: fullText, // Original text for display
 			},
 		};
 	}).filter(Boolean); // Remove null entries

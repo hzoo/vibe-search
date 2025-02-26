@@ -129,7 +129,7 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
 						class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words"
 						// biome-ignore lint/security/noDangerouslySetInnerHtml: trying to render html tweet text
 						dangerouslySetInnerHTML={{
-							__html: highlightText(result.text, query.value),
+							__html: highlightText(result.full_text || result.text, query.value),
 						}}
 					/>
         </div>
