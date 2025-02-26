@@ -2,9 +2,17 @@ import { signal } from "@preact/signals";
 import { createClient } from "@supabase/supabase-js";
 import type { TwitterUser } from "@/ui/src/store/userCache";
 
-// Supabase setup
+// Supabase setup with error handling for missing environment variables
+// Ensure to add the following to your .env file:
+// VITE_PUBLIC_SUPABASE_URL=https://your-supabase-url.supabase.co
+// VITE_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  alert("Missing .env variables (VITE_PUBLIC_SUPABASE_URL, VITE_PUBLIC_SUPABASE_ANON_KEY). Please refer to the README for local setup instructions: https://github.com/TheExGenesis/community-archive/blob/main/README.md");
+}
+
 export const supabase = signal(createClient(supabaseUrl, supabaseKey));
 
 // Debug mode
