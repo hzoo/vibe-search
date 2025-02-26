@@ -1,11 +1,19 @@
 ---
-description: importing files
+description: import files using aliased module paths, using @ for absolute paths
 globs: *.ts, *.tsx
 alwaysApply: false
 ---
-use absolute imports (using "@/folder") over relative imports
+always use absolute imports (using "@/folder") over relative imports
+
+```json
+{
+    "paths": {
+     "@/*": ["packages/*"]
+    }
+}
+```
 
 ```diff
-- import { activeDocuments } from "../store/whiteboard";
-+ import { activeDocuments } from "@/src/store/whiteboard";
+- import type { UserData } from "../store/userCache";
++ import type { UserData } from "@/ui/src/store/userCache";
 ```

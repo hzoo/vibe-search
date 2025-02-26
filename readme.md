@@ -3,21 +3,19 @@
 ![88735](https://github.com/user-attachments/assets/b511ae6b-1c5e-47d9-8845-dd24f441f0d3)
 
 - for: https://github.com/TheExGenesis/community-archive
-- referenced: https://github.com/DefenderOfBasic/twitter-semantic-search.
-- follow: [local setup](https://github.com/TheExGenesis/community-archive/blob/main/docs/local-setup.md). 
+- ref: https://github.com/DefenderOfBasic/twitter-semantic-search
 
-
-## Quick Start (Recommended)
+## Quick Start
 
 ```bash
-# if no bun
+# install Bun
 curl -fsSL https://bun.sh/install | bash
-# Install dependencies (also installs qdrant binary ~70mb)
+# install dependencies, qdrant binary is ~70mb
 bun install
 # add .env for community archive supabase
 # VITE_PUBLIC_SUPABASE_URL=
 # VITE_PUBLIC_SUPABASE_ANON_KEY=
-# Start all services in one terminal
+# start all services in one terminal
 bun start
 ```
 
@@ -26,32 +24,14 @@ The script will:
 2. Start the API server that talks to Qdrant
 3. Start the UI server
 
-Once everything is running, open http://localhost:5173 in your browser.
+Once everything is running, open http://localhost:5173 in your browser
 
 ## Importing Tweets
 
 You can import tweets directly from the UI:
 
-1. Click the import button in the top-right corner of the UI
+1. Click the import button in the top-right corner of the UI (or press `⌘ + I`)
 2. Choose between importing by username or uploading a Twitter/X archive JSON file
-3. Follow the prompts to complete the import
-
-### Advanced Import Options
-
-For large archives or when you want to bypass duplicate checking:
-
-```bash
-# Normal import (checks for duplicates)
-bun run import:qdrant path/to/archive.json
-
-# Force import (skips duplicate checking for faster imports)
-bun run import:qdrant path/to/archive.json --force
-```
-
-The `--force` flag is useful for:
-- Initial imports of large archives
-- Re-importing after clearing the database
-- When you're sure there are no duplicates
 
 ### Import History
 
@@ -60,26 +40,19 @@ The system now maintains an import history file (`packages/server/import-history
 - Latest tweet date for each username
 - Total tweet count imported for each username
 
-This makes subsequent imports much faster as the system can immediately determine which tweets are new without querying the database.
+This makes subsequent imports much faster by skipping over processed tweets
 
 ## Manual Setup (Alternative)
 
 If you prefer to run services separately, you can use the following commands:
 
-### Setup Qdrant
-
-This project includes a custom local implementation of Qdrant that automatically downloads and manages the Qdrant binary.
-
 ```bash
-# also installs qdrant binary (~70mb) and data folder to packages/qdrant-local/bin
+# qdrant binary (~70mb) + data folder is in packages/qdrant-local/bin
 bun install
-
-# terminal #1: qdrant binary (uses local implementation)
+# terminal #1: run qdrant
 bun run qdrant
-
 # terminal #2: start server that talks between qdrant and ui
 bun run dev:qdrant
-
 # terminal #3: run the UI
 bun run ui
 ```
