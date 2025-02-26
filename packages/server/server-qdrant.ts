@@ -5,9 +5,21 @@ import { serve } from "bun";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUIDv7 } from "bun";
+import { cleanTweet, type TweetPreprocessingOptions } from "./tweet-preprocessor";
 
 // Import history path
 const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
+
+// Configure tweet preprocessing options for search queries
+const SEARCH_PREPROCESSING_OPTIONS: TweetPreprocessingOptions = {
+  removeUrls: true,
+  removeLeadingMentions: true,
+  removeAllMentions: false,
+  removeAllHashtags: false, // Keep hashtags in search queries
+  removeRetweetPrefix: true,
+  minLength: 2, // Allow shorter search queries
+  // convertEmojis: true, // Convert emojis in search queries
+};
 
 // Interface for import history
 interface ImportHistory {
@@ -164,8 +176,21 @@ const server = serve({
           );
         }
         
-        // Generate embedding for the query
-        const result = await embedder(query, { pooling: 'mean', normalize: true });
+        // Preprocess the query text
+        const cleanedQuery = cleanTweet(query, SEARCH_PREPROCESSING_OPTIONS);
+        console.log(`Original query: "${query}"`);
+        console.log(`Cleaned query: "${cleanedQuery}"`);
+        
+        // If the query is empty after cleaning, return an error
+        if (!cleanedQuery) {
+          return Response.json(
+            { error: "Query is empty after preprocessing" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+        
+        // Generate embedding for the cleaned query
+        const result = await embedder(cleanedQuery, { pooling: 'mean', normalize: true });
         const queryVector = Array.from(result.data);
         
         // Prepare search parameters

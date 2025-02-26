@@ -5,10 +5,24 @@ import { pipeline } from '@xenova/transformers';
 import { randomUUIDv7 } from "bun";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { cleanTweet, processThread, type TweetPreprocessingOptions } from "./tweet-preprocessor";
 
 const CHUNK_SIZE = 500; // Process fewer tweets at a time
 const VECTOR_SIZE = 384; // Size of the embedding vectors from all-MiniLM-L6-v2
 const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
+
+// Configure tweet preprocessing options
+const PREPROCESSING_OPTIONS: TweetPreprocessingOptions = {
+	removeUrls: true,
+	removeLeadingMentions: true,
+	removeAllMentions: false,
+	removeAllHashtags: true,
+	keepImportantHashtags: ["AI", "ML", "Crypto", "Tech"],
+	removeRetweetPrefix: true,
+	minLength: 5,
+	convertEmojis: false,
+	combineThreads: true,
+};
 
 interface Tweet {
 	id: string;
@@ -107,9 +121,9 @@ export function formatProgress(current: number, total: number): string {
 }
 
 export interface ImportOptions {
-  filePath: string;
-  forceImport?: boolean;
-  onProgress?: (progress: number, total: number, status: string) => void;
+	filePath: string;
+	forceImport?: boolean;
+	onProgress?: (progress: number, total: number, status: string) => void;
 }
 
 export async function importTweets(options: ImportOptions) {
@@ -139,10 +153,10 @@ export async function importTweets(options: ImportOptions) {
 			on_disk_payload: true,
 			quantization_config: {
 				scalar: {
-				  type: "int8", // Stores embeddings as int8 for memory efficiency
-				  always_ram: true, // Speeds up query
+					type: "int8", // Stores embeddings as int8 for memory efficiency
+					always_ram: true, // Speeds up query
 				},
-			  },
+			},
 		});
 		
 		// Create payload indexes for efficient filtering
@@ -529,34 +543,46 @@ export function buildThreads(tweets: Tweet[]) {
 		`Built ${threads.length} threads. Total word count: ${wordCount}`,
 	);
 
-	// Convert threads to embedable format
-	return threads.map((thread) => ({
-		id: thread[0].id,
-		text: thread
-			.map((tweet) => tweet.full_text || "")
-			.filter(Boolean)
-			.join(" ")
-			.trim(),
-		metadata: {
-			username: thread[0].user?.username || "",
-			created_at: thread[0].created_at,
-		},
-	}));
+	// Convert threads to embedable format with preprocessing
+	return threads.map((thread) => {
+		// Use our thread processor to clean and combine tweets
+		const threadTweets = thread.map(tweet => ({
+			text: tweet.text || "",
+			full_text: tweet.full_text || tweet.text || "",
+		}));
+		
+		// Process the thread with our preprocessor
+		const processedText = processThread(threadTweets, PREPROCESSING_OPTIONS);
+		
+		// Skip threads that are empty after preprocessing
+		if (!processedText) {
+			return null;
+		}
+		
+		return {
+			id: thread[0].id,
+			text: processedText,
+			metadata: {
+				username: thread[0].user?.username || "",
+				created_at: thread[0].created_at,
+			},
+		};
+	}).filter(Boolean); // Remove null entries
 }
 
 // Create a CLI wrapper for direct execution
 if (import.meta.main) {
-  const filePath = process.argv[2];
-  const forceImport = process.argv.includes("--force");
-  
-  if (!filePath) {
-    console.error("Please provide a file path as a command line argument.");
-    process.exit(1);
-  }
-  
-  importTweets({ filePath, forceImport })
-    .catch(error => {
-      console.error("Import failed:", error);
-      process.exit(1);
-    });
+	const filePath = process.argv[2];
+	const forceImport = process.argv.includes("--force");
+	
+	if (!filePath) {
+		console.error("Please provide a file path as a command line argument.");
+		process.exit(1);
+	}
+	
+	importTweets({ filePath, forceImport })
+		.catch(error => {
+			console.error("Import failed:", error);
+			process.exit(1);
+		});
 } 
