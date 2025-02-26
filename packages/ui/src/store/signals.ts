@@ -7,20 +7,9 @@ const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
 export const supabase = signal(createClient(supabaseUrl, supabaseKey));
 
 // API endpoints
-export const embeddingsUrl =
-  window.location.hostname === "localhost"
-    ? "http://localhost:3001/api/search"
-    : "http://vibe-search-api.henryzoo.com/api/search";
-
-export const importUrl =
-  window.location.hostname === "localhost"
-    ? "http://localhost:3001/api/import"
-    : "http://vibe-search-api.henryzoo.com/api/import";
-
-export const deleteEmbeddingsUrl =
-  window.location.hostname === "localhost"
-    ? "http://localhost:3001/api/delete-embeddings"
-    : "http://vibe-search-api.henryzoo.com/api/delete-embeddings";
+export const embeddingsUrl = "http://localhost:3001/api/search";
+export const importUrl = "http://localhost:3001/api/import";
+export const deleteEmbeddingsUrl = "http://localhost:3001/api/delete-embeddings";
 
 // Available users for filtering
 export const USERS = [

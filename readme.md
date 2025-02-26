@@ -14,6 +14,9 @@
 curl -fsSL https://bun.sh/install | bash
 # Install dependencies (also installs qdrant binary ~70mb)
 bun install
+# add .env for community archive supabase
+# VITE_PUBLIC_SUPABASE_URL=
+# VITE_PUBLIC_SUPABASE_ANON_KEY=
 # Start all services in one terminal
 bun start
 ```
