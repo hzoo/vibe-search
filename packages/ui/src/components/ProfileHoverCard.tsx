@@ -1,7 +1,7 @@
-import type { UserData } from "@/ui/src/store/userCache";
+import type { TwitterUser } from "@/ui/src/store/userCache";
 
 interface ProfileHoverCardProps {
-  userData: UserData | null;
+  userData: TwitterUser | null;
   username: string;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -29,7 +29,7 @@ export function ProfileHoverCard({
         />
         <div class="flex-1 min-w-0">
           <div class="font-bold text-gray-900 dark:text-gray-100 truncate">
-            {userData.displayName}
+            {userData.account_display_name}
           </div>
           <div class="text-gray-500 dark:text-gray-400">@{username}</div>
         </div>

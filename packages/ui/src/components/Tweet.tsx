@@ -3,7 +3,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { useSignalEffect } from "@preact/signals";
 import { ProfileHoverCard } from "@/ui/src/components/ProfileHoverCard";
-import type { UserData } from "@/ui/src/store/userCache";
+import type { TwitterUser } from "@/ui/src/store/userCache";
 import { getUserData } from "@/ui/src/store/userCache";
 import { selectedTweetIndex, headerHeight, query, debugMode } from "@/ui/src/store/signals";
 import type { results } from "@/ui/src/store/signals";
@@ -15,7 +15,7 @@ interface TweetProps {
 }
 
 export const Tweet = memo(({ result, index }: TweetProps) => {
-  const userData = useSignal<UserData | null>(null);
+  const userData = useSignal<TwitterUser | null>(null);
   const showProfile = useSignal(false);
   const imageLoaded = useSignal(false);
   const showDebugTooltip = useSignal(false);
@@ -128,7 +128,7 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
                 onClick={(e) => e.stopPropagation()}
               >
                 <span class="font-bold text-gray-900 dark:text-gray-100">
-                  {userData.value?.displayName || result.username}
+                  {userData.value?.account_display_name || result.username}
                 </span>
                 <span class="text-gray-500 dark:text-gray-400">
                   {" "}

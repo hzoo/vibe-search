@@ -205,6 +205,7 @@ export async function importTweets(options: ImportOptions) {
 		)
 			return false;
 
+		console.log(JSON.stringify(tweet, null, 2));
 		return true;
 	});
 	console.log(`Tweets after filtering: ${tweetsData.tweets.length}`);

@@ -39,4 +39,6 @@ async function testQdrantEmbeddings() {
   }
 }
 
-testQdrantEmbeddings().catch(console.error);
+if (import.meta.main) {
+	testQdrantEmbeddings().catch(console.error);
+}

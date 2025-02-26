@@ -16,9 +16,10 @@ import { formatDate } from "@/ui/src/utils/textUtils";
 import {
 	fetchTwitterUsers,
 	searchTwitterUsers,
-} from "@/ui/src/store/twitterUsers";
-import type { TwitterUser } from "@/ui/src/store/twitterUsers";
+} from "@/ui/src/store/userCache";
+import type { TwitterUser } from "@/ui/src/store/userCache";
 import { existingArchives, checkArchives, formatFileSize, type ArchivesResponse } from "./ImportDialog";
+import { saveArchive } from "@/ui/src/components/import-tweets/importSignals";
 
 interface ArchiveInfo {
 	filename: string;
@@ -28,19 +29,16 @@ interface ArchiveInfo {
 
 interface ImportUsernameModeProps {
 	usernameInput: { value: string };
-	forceImport: { value: boolean };
-	saveArchive: { value: boolean };
 }
 
 export function ImportUsernameMode({ 
 	usernameInput, 
-	forceImport, 
-	saveArchive 
 }: ImportUsernameModeProps) {
 	const showUserDropdown = useSignal(false);
 	const userSearchQuery = useSignal("");
 	const filteredUsers = useSignal<TwitterUser[]>([]);
 	const selectedIndex = useSignal(-1);
+	const forceImport = useSignal(false);
 
 	// Filter users when search query changes
 	useSignalEffect(() => {

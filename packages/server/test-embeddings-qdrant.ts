@@ -102,4 +102,6 @@ async function testQdrantEmbeddings() {
   console.log("Test completed successfully!");
 }
 
-testQdrantEmbeddings().catch(console.error); 
+if (import.meta.main) {
+	testQdrantEmbeddings().catch(console.error);
+} 

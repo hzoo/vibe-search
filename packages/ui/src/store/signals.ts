@@ -1,5 +1,6 @@
 import { signal } from "@preact/signals";
 import { createClient } from "@supabase/supabase-js";
+import type { TwitterUser } from "@/ui/src/store/userCache";
 
 // Supabase setup
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
@@ -13,16 +14,6 @@ export const debugMode = signal(false);
 export const embeddingsUrl = "http://localhost:3001/api/search";
 export const importUrl = "http://localhost:3001/api/import";
 export const deleteEmbeddingsUrl = "http://localhost:3001/api/delete-embeddings";
-
-// Available users for filtering
-export const USERS = [
-  {
-    username: "DefenderOfBasic",
-    displayName: "Defender",
-    id: "1680757426889342977",
-  },
-  { username: "exgenesis", displayName: "❤️‍🔥 xiq in NYC 🏙️ Feb 16 - 28", id: "322603863" },
-] as { username: string; displayName: string; id: string }[];
 
 // Search related signals
 export const query = signal("love");
@@ -77,14 +68,7 @@ export const deleteSuccess = signal<string | null>(null);
 export const lastDialogOpenTime = signal<{ dialog: string; time: number } | null>(null);
 
 // Twitter users from Supabase
-export const twitterUsers = signal<Array<{
-  username: string;
-  account_display_name: string;
-  account_id: string;
-  num_tweets?: number;
-  num_followers?: number;
-  num_following?: number;
-}>>([]);
+export const twitterUsers = signal<Partial<TwitterUser>[]>([]);
 export const twitterUsersLoading = signal(false);
 export const twitterUsersError = signal<string | null>(null);
 

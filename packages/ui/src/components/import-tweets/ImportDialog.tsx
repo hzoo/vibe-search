@@ -13,9 +13,7 @@ import {
 import { debounce } from "@/ui/src/utils";
 import {
 	fetchTwitterUsers,
-	searchTwitterUsers,
-} from "@/ui/src/store/twitterUsers";
-import type { TwitterUser } from "@/ui/src/store/twitterUsers";
+} from "@/ui/src/store/userCache";
 import { ImportTweetsHeader } from "@/ui/src/components/import-tweets/ImportTweetsHeader";
 import { ImportTweetsStatus } from "@/ui/src/components/import-tweets/ImportTweetsStatus";
 import { ImportUsernameMode } from "@/ui/src/components/import-tweets/ImportUsernameMode";
@@ -130,11 +128,7 @@ export function ImportDialog() {
 
 	const usernameInput = useSignal("");
 	const importMode = useSignal<"username" | "file">("username");
-	const forceImport = useSignal(false);
-	const saveArchive = useSignal(false);
 	const showUserDropdown = useSignal(false);
-	const userSearchQuery = useSignal("");
-	const filteredUsers = useSignal<TwitterUser[]>([]);
 
 	// Check import history when username changes
 	useSignalEffect(() => {
@@ -146,15 +140,6 @@ export function ImportDialog() {
 		}
 
 		debouncedChecks(usernameInput.value.trim());
-	});
-
-	// Filter users when search query changes
-	useSignalEffect(() => {
-		if (userSearchQuery.value.trim()) {
-			filteredUsers.value = searchTwitterUsers(userSearchQuery.value);
-		} else {
-			filteredUsers.value = twitterUsers.value.slice(0, 25); // Limit to first 50 users
-		}
 	});
 
 	// Handle keyboard navigation in dropdown
@@ -196,7 +181,7 @@ export function ImportDialog() {
 			document.removeEventListener("mousedown", handleClickOutside);
 			document.removeEventListener("keydown", handleEscKey);
 		};
-	}, [showUserDropdown]);
+	}, [showUserDropdown.value]);
 
 	return (
 		<div className="fixed bottom-4 right-4 z-50 flex flex-col w-[450px] max-w-[90vw]">
@@ -235,11 +220,9 @@ export function ImportDialog() {
 								{importMode.value === "username" ? (
 									<ImportUsernameMode 
 										usernameInput={usernameInput} 
-										forceImport={forceImport} 
-										saveArchive={saveArchive} 
 									/>
 								) : (
-									<ImportFileMode saveArchive={saveArchive} />
+									<ImportFileMode/>
 								)}
 
 								{importError.value && (

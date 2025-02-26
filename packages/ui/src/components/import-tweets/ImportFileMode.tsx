@@ -9,12 +9,9 @@ import {
 	handleSearch,
 	currentDialog,
 } from "@/ui/src/store/signals";
+import { saveArchive } from "@/ui/src/components/import-tweets/importSignals";
 
-interface ImportFileModeProps {
-	saveArchive: { value: boolean };
-}
-
-export function ImportFileMode({ saveArchive }: ImportFileModeProps) {
+export function ImportFileMode() {
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const dragActive = useSignal(false);
 
