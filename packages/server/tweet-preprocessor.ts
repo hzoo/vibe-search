@@ -74,11 +74,11 @@ export interface TweetEntities {
 }
 
 /**
- * Unfurl URLs in tweet text by replacing them with their display text
+ * Unfurl URLs in tweet text by replacing them with their expanded URLs
  * 
  * @param text The raw tweet text
  * @param entities The tweet entities containing URL information
- * @returns The text with URLs replaced by their display text
+ * @returns The text with t.co URLs replaced by their expanded URLs
  */
 export function unfurlUrls(text: string, entities: TweetEntities): string {
   if (!text || !entities?.urls?.length) {
@@ -90,18 +90,18 @@ export function unfurlUrls(text: string, entities: TweetEntities): string {
   // Sort URLs by their position in reverse order to avoid index shifting
   const urls = [...entities.urls].sort((a, b) => b.indices[0] - a.indices[0]);
   
-  // Replace each URL with its display text
+  // Replace each URL with its expanded URL
   for (const url of urls) {
-    if (url.indices && url.indices.length === 2 && url.display_url) {
+    if (url.indices && url.indices.length === 2 && url.expanded_url) {
       const start = url.indices[0];
       const end = url.indices[1];
       
       // Make sure the indices are valid
       if (start >= 0 && end <= unfurledText.length && start < end) {
-        // Replace the URL with its display text
+        // Replace the t.co URL with its expanded URL
         unfurledText = 
           unfurledText.substring(0, start) + 
-          url.display_url + 
+          url.expanded_url + 
           unfurledText.substring(end);
       }
     }

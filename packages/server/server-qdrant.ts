@@ -68,7 +68,7 @@ function checkArchivesForUsername(username: string) {
   
   try {
     const files = readdirSync(ARCHIVES_DIR)
-      .filter(file => file.toLowerCase().startsWith(username.toLowerCase()) && file.endsWith('.json'))
+      .filter(file => file.toLowerCase().startsWith(username.toLowerCase()) && file.endsWith('.json') && !file.includes('profile'))
       .map(file => {
         const filePath = join(ARCHIVES_DIR, file);
         const stats = statSync(filePath);

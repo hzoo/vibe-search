@@ -18,9 +18,6 @@ export function formatTweetDate(dateString: number) {
 
 // Convert text with URLs and usernames to HTML with links
 export function linkify(text: string) {
-  const urlRegex = /https?:\/\/[^\s<]+/g;
-  const usernameRegex = /@(\w+)/g;
-
   // First escape HTML
   const escapedText = text.replace(
     /[&<>"']/g,
@@ -34,20 +31,43 @@ export function linkify(text: string) {
       })[char]!,
   );
 
-  // Replace URLs first
-  let replacedText = escapedText.replace(urlRegex, (url) => {
-    const trimmedUrl = url.replace(/[.,;:]$/, "");
-    return `<a href="${trimmedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${trimmedUrl}</a>`;
+  // Create a combined regex that captures both URLs and usernames
+  // The regex uses capturing groups to differentiate between URLs and usernames
+  const combinedRegex = /(https?:\/\/[^\s<]+)|(@\w+)/g;
+  
+  // Replace both URLs and usernames in a single pass
+  return escapedText.replace(combinedRegex, (match, url, username) => {
+    // If url is defined, this match is a URL
+    if (url) {
+      const trimmedUrl = url.replace(/[.,;:]$/, "");
+      
+      // Clean up the display text for the URL
+      let displayUrl = trimmedUrl
+        // Remove protocol (http://, https://)
+        .replace(/^https?:\/\//, '')
+        // Remove www. prefix
+        .replace(/^www\./, '');
+      
+      // Simple truncation for long URLs
+      const MAX_URL_LENGTH = 25;
+      if (displayUrl.length > MAX_URL_LENGTH) {
+        displayUrl = `${displayUrl.substring(0, MAX_URL_LENGTH)}...`;
+      }
+      
+      return `<a href="${trimmedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${displayUrl}</a>`;
+    }
+    
+    // If username is defined and not part of a URL, this match is a username
+    // We know it's not part of a URL because the URL pattern would have matched first
+    if (username) {
+      // Extract just the username without the @ symbol
+      const usernameWithoutAt = username.substring(1);
+      return `<a href="https://x.com/${usernameWithoutAt}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${username}</a>`;
+    }
+    
+    // This should never happen, but return the original match just in case
+    return match;
   });
-
-  // Then replace usernames
-  replacedText = replacedText.replace(
-    usernameRegex,
-    (match, username) =>
-      `<a href="https://x.com/${username}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${match}</a>`,
-  );
-
-  return replacedText;
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 	extractHashtags,
 	extractMentions,
 	extractDomains,
+	unfurlUrls,
 	type TweetEntities,
 } from "./tweet-preprocessor";
 
@@ -19,7 +20,7 @@ const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
 
 // Configure tweet preprocessing options
 const PREPROCESSING_OPTIONS: TweetPreprocessingOptions = {
-	removeUrls: true,
+	removeUrls: false,
 	removeLeadingMentions: true,
 	removeAllMentions: false,
 	removeAllHashtags: true,
@@ -295,7 +296,7 @@ export async function importTweets(options: ImportOptions) {
 	// Check for --force flag to skip duplicate checking
 	const force = forceImport;
 
-	console.log("Loading tweets...");
+	console.log("Loading tweets...", filePath);
 	const file = Bun.file(filePath);
 	const tweetsData: TweetData = await file.json();
 
@@ -786,9 +787,13 @@ export function buildThreads(tweets: Tweet[]) {
 				return null;
 			}
 
-			// Preserve the original full text for display
+			// Preserve the original full text for display, with URLs unfurled
 			const fullText = thread
-				.map((t) => t.full_text || t.text || "")
+				.map((t) => {
+					const text = t.full_text || t.text || "";
+					// Unfurl URLs in the original text
+					return unfurlUrls(text, t.entities as TweetEntities);
+				})
 				.join("\n\n");
 
 			// Get the root tweet for metadata
