@@ -50,6 +50,42 @@ export function linkify(text: string) {
   return replacedText;
 }
 
+/**
+ * Process tweet text to identify and separate reply mentions
+ * @param text The tweet text to process
+ * @returns An object containing the processed text parts
+ */
+export function processReplyMentions(text: string): { 
+  isReply: boolean;
+  replyMentions: string; 
+  mainText: string;
+} {
+  // Regular expression to match mentions at the beginning of a tweet
+  // This matches one or more @username patterns at the start, followed by optional whitespace
+  const replyMentionsRegex = /^((@\w+\s*)+)(?=\S)/;
+  
+  const match = text.match(replyMentionsRegex);
+  
+  if (match) {
+    // This is a reply tweet with mentions at the beginning
+    const replyMentions = match[1].trim();
+    const mainText = text.slice(match[0].length).trim();
+    
+    return {
+      isReply: true,
+      replyMentions,
+      mainText
+    };
+  }
+  
+  // Not a reply or no mentions at the beginning
+  return {
+    isReply: false,
+    replyMentions: '',
+    mainText: text
+  };
+}
+
 // Highlight search terms in text
 export function highlightText(text: string, query: string) {
   if (!query) return linkify(text);

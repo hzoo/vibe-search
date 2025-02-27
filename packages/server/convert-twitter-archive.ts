@@ -4,6 +4,7 @@ import { existsSync, readdirSync, createReadStream, createWriteStream } from "no
 import { dirname, basename, join } from "node:path";
 import { $ } from "bun";
 import { createInterface } from "node:readline";
+import { fetch } from "bun";
 
 /**
  * Process a Twitter archive zip file
@@ -249,6 +250,32 @@ async function validateJsonFile(filePath: string): Promise<boolean> {
 }
 
 /**
+ * Unfurl a t.co URL to get the actual destination URL
+ * This follows the redirect chain to get the final URL
+ */
+async function unfurlTcoUrl(url: string): Promise<string> {
+  if (!url || !url.includes('t.co/')) {
+    return url; // Not a t.co URL or empty, return as is
+  }
+  
+  try {
+    console.log(`Unfurling t.co URL: ${url}`);
+    // Use fetch with HEAD method to follow redirects without downloading content
+    const response = await fetch(url, { 
+      method: 'HEAD',
+      redirect: 'follow'
+    });
+    
+    // Return the final URL after all redirects
+    console.log(`Unfurled to: ${response.url}`);
+    return response.url;
+  } catch (error) {
+    console.error(`Failed to unfurl t.co URL: ${error}`);
+    return url; // Return original URL if unfurling fails
+  }
+}
+
+/**
  * Extract profile data from Twitter archive and create a lightweight profile JSON
  * This contains essential user information needed by the UI
  */
@@ -303,7 +330,19 @@ async function extractProfileData(
 			if (profileInfo[0]?.profile) {
 				profileData.photo = profileInfo[0].profile.avatarMediaUrl;
 				profileData.bio = profileInfo[0].profile.description?.bio;
+				
+				// Get the website from profile
 				profileData.website = profileInfo[0].profile.description?.website;
+				
+				// Unfurl t.co URLs in the profile website field
+				if (profileData.website?.includes('t.co/')) {
+					try {
+						profileData.website = await unfurlTcoUrl(profileData.website);
+					} catch (error) {
+						console.error(`Error unfurling t.co URL: ${error}`);
+					}
+				}
+				
 				profileData.location = profileInfo[0].profile.description?.location;
 			}
 		} catch (error) {

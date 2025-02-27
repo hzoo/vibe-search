@@ -4,10 +4,10 @@ import { useSignal } from "@preact/signals";
 import { useSignalEffect } from "@preact/signals";
 import { ProfileHoverCard } from "@/ui/src/components/ProfileHoverCard";
 import type { TwitterUser } from "@/ui/src/store/userCache";
-import { fetchLocalProfile, getUserData } from "@/ui/src/store/userCache";
+import { getUserData } from "@/ui/src/store/userCache";
 import { selectedTweetIndex, headerHeight, query, debugMode } from "@/ui/src/store/signals";
 import type { results } from "@/ui/src/store/signals";
-import { formatTweetDate, highlightText } from "@/ui/src/utils/textUtils";
+import { formatTweetDate, highlightText, processReplyMentions } from "@/ui/src/utils/textUtils";
 
 interface TweetProps {
   result: (typeof results.value)[0];
@@ -61,17 +61,38 @@ const TweetContent = ({
 }: { 
   text: string; 
   queryText: string;
-}) => (
-  <div class="relative">
-    <p
-      class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: trying to render html tweet text
-      dangerouslySetInnerHTML={{
-        __html: highlightText(text, queryText),
-      }}
-    />
-  </div>
-);
+}) => {
+  // Process the text to handle reply mentions
+  const { isReply, replyMentions, mainText } = processReplyMentions(text);
+  
+  return (
+    <div class="relative">
+      {isReply && (
+        <div class="flex items-center gap-1 mb-1 text-xs text-gray-500 dark:text-gray-400">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clip-rule="evenodd" />
+          </svg>
+          <span>Replying to</span>
+          <span 
+            class="hover:underline cursor-pointer"
+            title={replyMentions}
+          >
+            {replyMentions.split(/\s+/).length > 1 
+              ? `${replyMentions.split(/\s+/)[0]} and ${replyMentions.split(/\s+/).length - 1} others` 
+              : replyMentions}
+          </span>
+        </div>
+      )}
+      <p
+        class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: trying to render html tweet text
+        dangerouslySetInnerHTML={{
+          __html: highlightText(isReply ? mainText : text, queryText),
+        }}
+      />
+    </div>
+  );
+};
 
 // Component for the debug view tabs
 const DebugTabs = ({ 
