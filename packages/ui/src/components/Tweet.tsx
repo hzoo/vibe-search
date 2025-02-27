@@ -9,61 +9,249 @@ import { selectedTweetIndex, headerHeight, query, debugMode } from "@/ui/src/sto
 import type { results } from "@/ui/src/store/signals";
 import { formatTweetDate, highlightText, processReplyMentions } from "@/ui/src/utils/textUtils";
 
+// Define interfaces for tweet media
+interface TweetMedia {
+  type: string;
+  media_url: string;
+  media_url_https: string;
+  url: string;
+  display_url: string;
+  expanded_url: string;
+  id_str: string;
+  sizes: {
+    small: { w: number; h: number; resize: string };
+    medium: { w: number; h: number; resize: string };
+    large: { w: number; h: number; resize: string };
+    thumb: { w: number; h: number; resize: string };
+  };
+}
+
+export interface ExtendedEntities {
+  media?: TweetMedia[];
+}
+
+// Utility function to format media URLs according to the modern format
+// <base_url>?format=<format>&name=<name>
+const formatMediaUrl = (mediaUrl: string, size: 'small' | 'medium' | 'large' | 'thumb' = 'medium'): string => {
+  // Extract the base URL and format from the media_url_https
+  const lastDotIndex = mediaUrl.lastIndexOf('.');
+  if (lastDotIndex === -1) return mediaUrl; // Fallback if no extension found
+  
+  const baseUrl = mediaUrl.substring(0, lastDotIndex);
+  const format = mediaUrl.substring(lastDotIndex + 1);
+  
+  // Return the formatted URL using the modern format
+  return `${baseUrl}?format=${format}&name=${size}`;
+};
+
+// Update the result type to include extended_entities
+type TweetResult = (typeof results.value)[0] & {
+  extended_entities?: ExtendedEntities;
+};
+
 interface TweetProps {
-  result: (typeof results.value)[0];
+  result: TweetResult;
   index: number;
 }
 
-// Component for the tweet header with user info and date
-const TweetHeader = ({ 
-  userData, 
-  username, 
-  formattedDate, 
-  distance,
-}: { 
-  userData: TwitterUser | null; 
-  username: string; 
-  formattedDate: string;
-  distance: number;
-}) => (
-  <div class="flex items-center gap-1 mb-1">
-    <div class="flex-1 min-w-0">
-      <a
-        href={`https://x.com/${username}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="hover:underline"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span class="font-bold text-gray-900 dark:text-gray-100">
-          {userData?.account_display_name || username}
-        </span>
-        <span class="text-gray-500 dark:text-gray-400">
-          {" "}
-          @{username}
-        </span>
-      </a>
-      <span class="text-gray-500 dark:text-gray-400">
-        {" "}
-        · {formattedDate}
-      </span>
+// Component to display tweet media (photos, videos, etc.)
+const TweetMedia = ({ media }: { media: TweetMedia[] }) => {
+  if (!media || media.length === 0) return null;
+  
+  // Different layouts based on the number of media items
+  const mediaCount = media.length;
+  
+  // Single media item
+  if (mediaCount === 1) {
+    const item = media[0];
+    
+    if (item.type === "photo") {
+      return (
+        <div class="mt-2 rounded-xl overflow-hidden">
+          <a 
+            href={item.expanded_url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            class="block"
+          >
+            <img 
+              src={formatMediaUrl(item.media_url_https, 'small')} 
+              alt="Tweet media" 
+              class="w-full h-auto max-h-[400px] object-cover"
+              loading="lazy"
+              // srcSet={`
+              //   ${formatMediaUrl(item.media_url_https, 'small')} 680w,
+              //   ${formatMediaUrl(item.media_url_https, 'medium')} 1200w,
+              //   ${formatMediaUrl(item.media_url_https, 'large')} 2048w
+              // `}
+              // sizes="(max-width: 680px) 100vw, (max-width: 1200px) 100vw, 100vw"
+            />
+          </a>
+        </div>
+      );
+    }
+    
+    if (item.type === "video" || item.type === "animated_gif") {
+      return (
+        <div class="mt-2 rounded-xl overflow-hidden relative">
+          <a 
+            href={item.expanded_url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            class="block relative"
+          >
+            <img 
+              src={formatMediaUrl(item.media_url_https, 'medium')} 
+              alt="Tweet video thumbnail" 
+              class="w-full h-auto max-h-[400px] object-cover"
+              loading="lazy"
+            />
+            <div class="absolute inset-0 flex items-center justify-center">
+              <div class="bg-black bg-opacity-50 rounded-full p-3">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" class="w-8 h-8">
+                  <path d="M8 5.14v14l11-7-11-7z" />
+                </svg>
+              </div>
+            </div>
+          </a>
+        </div>
+      );
+    }
+    
+    // Default fallback for unknown media types
+    return (
+      <div class="mt-2 rounded-xl overflow-hidden">
+        <a 
+          href={item.expanded_url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          class="block text-blue-500 hover:underline"
+        >
+          {item.display_url}
+        </a>
+      </div>
+    );
+  }
+  
+  // Two media items
+  if (mediaCount === 2) {
+    return (
+      <div class="mt-2 grid grid-cols-2 gap-1 rounded-xl overflow-hidden">
+        {media.map((item) => (
+          <a 
+            key={item.id_str || item.url}
+            href={item.expanded_url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            class="block h-[200px]"
+          >
+            <img 
+              src={formatMediaUrl(item.media_url_https, 'small')} 
+              alt="Tweet media" 
+              class="w-full h-full object-cover"
+              loading="lazy"
+            />
+          </a>
+        ))}
+      </div>
+    );
+  }
+  
+  // Three media items
+  if (mediaCount === 3) {
+    return (
+      <div class="mt-2 grid grid-cols-2 gap-1 rounded-xl overflow-hidden">
+        <a 
+          href={media[0].expanded_url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          class="block row-span-2 h-[400px]"
+        >
+          <img 
+            src={formatMediaUrl(media[0].media_url_https, 'medium')} 
+            alt="Tweet media 1" 
+            class="w-full h-full object-cover"
+            loading="lazy"
+          />
+        </a>
+        <a 
+          href={media[1].expanded_url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          class="block h-[198px]"
+        >
+          <img 
+            src={formatMediaUrl(media[1].media_url_https, 'small')} 
+            alt="Tweet media 2" 
+            class="w-full h-full object-cover"
+            loading="lazy"
+          />
+        </a>
+        <a 
+          href={media[2].expanded_url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          class="block h-[198px]"
+        >
+          <img 
+            src={formatMediaUrl(media[2].media_url_https, 'small')} 
+            alt="Tweet media 3" 
+            class="w-full h-full object-cover"
+            loading="lazy"
+          />
+        </a>
+      </div>
+    );
+  }
+  
+  // Four or more media items (show first 4)
+  return (
+    <div class="mt-2 grid grid-cols-2 gap-1 rounded-xl overflow-hidden">
+      {media.slice(0, 4).map((item, idx) => (
+        <a 
+          key={item.id_str || item.url}
+          href={item.expanded_url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          class="block h-[150px] relative"
+        >
+          <img 
+            src={formatMediaUrl(item.media_url_https, 'small')} 
+            alt={`Tweet media ${idx + 1}`} 
+            class="w-full h-full object-cover"
+            loading="lazy"
+          />
+          {idx === 3 && media.length > 4 && (
+            <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center text-white font-bold text-xl">
+              +{media.length - 4}
+            </div>
+          )}
+        </a>
+      ))}
     </div>
-    <span class="text-gray-500 dark:text-gray-400 text-xs shrink-0">
-      {distance.toFixed(3)}
-    </span>
-  </div>
-);
+  );
+};
 
 // Component for the tweet content
 const TweetContent = ({ 
-  text, 
+  full_text, 
   queryText,
+  extended_entities,
 }: { 
-  text: string; 
+  full_text: string; 
   queryText: string;
+  extended_entities?: ExtendedEntities;
 }) => {
   // Process the text to handle reply mentions
-  const { isReply, replyMentions, mainText } = processReplyMentions(text);
+  const { isReply, replyMentions, mainText } = processReplyMentions(full_text);
   
   return (
     <div class="relative">
@@ -87,9 +275,14 @@ const TweetContent = ({
         class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: trying to render html tweet text
         dangerouslySetInnerHTML={{
-          __html: highlightText(isReply ? mainText : text, queryText),
+          __html: highlightText(isReply ? mainText : full_text, queryText),
         }}
       />
+      
+      {/* Display media if available */}
+      {extended_entities?.media && extended_entities.media.length > 0 && (
+        <TweetMedia media={extended_entities.media} />
+      )}
     </div>
   );
 };
@@ -323,8 +516,9 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
 
           {/* Tweet Text */}
           <TweetContent 
-            text={result.full_text || result.text}
+            full_text={result.full_text}
             queryText={query.value}
+            extended_entities={result.extended_entities}
           />
 
           {/* Debug View (inline) */}
@@ -353,8 +547,8 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
               
               {activeTab.value === 'comparison' ? (
                 <DebugComparisonView 
-                  embeddingText={result.text} 
-                  displayText={result.full_text || result.text} 
+                  embeddingText={result.full_text} 
+                  displayText={result.full_text} 
                 />
               ) : (
                 <DebugJsonView result={result} />

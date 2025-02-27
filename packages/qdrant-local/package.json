@@ -19,8 +19,7 @@
     "@qdrant/js-client-rest": "^1.13.0"
   },
   "devDependencies": {
-    "bun-types": "latest",
-    "typescript": "^5.0.0"
+    "bun-types": "latest"
   },
   "files": [
     "dist"

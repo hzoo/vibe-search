@@ -35,8 +35,7 @@ export interface Tweet {
 	// Original Twitter data fields - these are fields from the Twitter API
 	id: string;
 	id_str: string;
-	text: string;
-	full_text?: string;
+	full_text: string;
 	created_at: string;
 	entities: Record<string, unknown>;
 	in_reply_to_user_id: string | null;
@@ -53,6 +52,23 @@ export interface Tweet {
 	possibly_sensitive?: boolean;
 	truncated: boolean;
 	display_text_range?: [number, number];
+	extended_entities?: {
+		media?: Array<{
+			type: string;
+			media_url: string;
+			media_url_https: string;
+			url: string;
+			display_url: string;
+			expanded_url: string;
+			id_str: string;
+			sizes: {
+				small: { w: number; h: number; resize: string };
+				medium: { w: number; h: number; resize: string };
+				large: { w: number; h: number; resize: string };
+				thumb: { w: number; h: number; resize: string };
+			};
+		}>;
+	};
 
 	// Custom fields (prefixed with _) - these are fields we add for our processing
 	_nextTweet?: Tweet;
@@ -311,7 +327,7 @@ export async function importTweets(options: ImportOptions) {
 	console.log(`Total tweets before filtering: ${tweetsData.tweets.length}`);
 	tweetsData.tweets = tweetsData.tweets.filter(({ tweet }) => {
 		// Filter out retweets
-		if (tweet.full_text?.startsWith("RT")) return false;
+		if (tweet.full_text.startsWith("RT")) return false;
 
 		// Filter out replies to other users
 		if (
@@ -430,7 +446,7 @@ export async function importTweets(options: ImportOptions) {
 			const embeddingStartTime = performance.now();
 
 			// Get the text content from each thread
-			const threadTexts = threads.map((t) => t?.text || "");
+			const threadTexts = threads.map(t => t.full_text);
 
 			// Generate embeddings directly
 			// Process texts in smaller batches to avoid memory issues
@@ -466,8 +482,7 @@ export async function importTweets(options: ImportOptions) {
 					full_text: thread.metadata.full_text,
 					tweet_type: thread.metadata.tweet_type,
 					contains_question: thread.metadata.contains_question,
-					// Add the processed text for display in search results
-					text: thread.text || "",
+					extended_entities: thread.metadata.extended_entities,
 				},
 			}));
 
@@ -715,6 +730,8 @@ export function processTweets(
 	return validTweets;
 }
 
+type ExcludesFalse = <T>(x: T | false) => x is T;  
+
 export function buildThreads(tweets: Tweet[]) {
 	// Build lookup table for faster access
 	const tweetsById = new Map<string, Tweet>();
@@ -774,8 +791,7 @@ export function buildThreads(tweets: Tweet[]) {
 
 			// Use our thread processor to clean and combine tweets
 			const threadTweets = thread.map((tweet) => ({
-				text: tweet.text || "",
-				full_text: tweet.full_text || tweet.text || "",
+				full_text: tweet.full_text,
 				entities: tweet.entities,
 			}));
 
@@ -790,7 +806,7 @@ export function buildThreads(tweets: Tweet[]) {
 			// Preserve the original full text for display, with URLs unfurled
 			const fullText = thread
 				.map((t) => {
-					const text = t.full_text || t.text || "";
+					const text = t.full_text;
 					// Unfurl URLs in the original text
 					return unfurlUrls(text, t.entities as TweetEntities);
 				})
@@ -799,9 +815,12 @@ export function buildThreads(tweets: Tweet[]) {
 			// Get the root tweet for metadata
 			const rootTweet = thread[0];
 
+			// Check for extended_entities in the root tweet
+			const extended_entities = rootTweet.extended_entities || undefined;
+
 			return {
 				id: rootTweet.id,
-				text: processedText, // Processed text for embedding
+				full_text: processedText, // Processed text for embedding
 				metadata: {
 					// User information
 					username: rootTweet._user?.username || "",
@@ -811,6 +830,7 @@ export function buildThreads(tweets: Tweet[]) {
 					created_at: rootTweet.created_at,
 					created_at_timestamp: new Date(rootTweet.created_at).getTime(),
 					full_text: fullText, // Original text for display
+					extended_entities, // Include extended_entities for media display
 
 					// Classification
 					tweet_type: rootTweet._tweet_type || "standalone",
@@ -822,7 +842,7 @@ export function buildThreads(tweets: Tweet[]) {
 					is_thread_root: !!rootTweet._is_thread_root,
 
 					// Content indicators
-					has_media: !!rootTweet.entities.media,
+					has_media: !!rootTweet.entities.media || !!extended_entities?.media,
 					has_links:
 						Array.isArray(rootTweet.entities.urls) &&
 						rootTweet.entities.urls.length > 0,
@@ -848,47 +868,7 @@ export function buildThreads(tweets: Tweet[]) {
 				},
 			};
 		})
-		.filter(Boolean) as {
-		id: string;
-		text: string;
-		metadata: {
-			// User information
-			username: string;
-			display_name: string;
-
-			// Tweet information
-			created_at: string;
-			created_at_timestamp: number;
-			full_text: string;
-
-			// Classification
-			tweet_type: string;
-
-			// Thread information
-			thread_id: string;
-			thread_length: number;
-			position_in_thread: number;
-			is_thread_root: boolean;
-
-			// Content indicators
-			has_media: boolean;
-			has_links: boolean;
-			has_mentions: boolean;
-			has_hashtags: boolean;
-			contains_question: boolean;
-			word_count: number;
-
-			// Extracted entities
-			hashtags: string[];
-			mentions: string[];
-			domains: string[];
-
-			// Engagement metrics
-			engagement_score: number;
-			favorite_count: number;
-			retweet_count: number;
-		};
-	}[]; // Remove null entries
+		.filter(Boolean); // Remove null entries
 }
 
 // Create a CLI wrapper for direct execution

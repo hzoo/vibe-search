@@ -7,6 +7,7 @@ import { join, dirname, basename } from "node:path";
 import { randomUUIDv7 } from "bun";
 import { cleanTweet, type TweetPreprocessingOptions } from "./tweet-preprocessor";
 import { processArchive } from "./convert-twitter-archive";
+import type { ExtendedEntities } from "@/ui/src/components/Tweet.js";
 
 // Import history path
 const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
@@ -486,22 +487,22 @@ const server = serve({
           // Transform the results into a simpler format
           const simplifiedResults = results.filter(r => r.payload).map((result) => {
             const payload = result.payload as {
-              text: string;
-              full_text?: string;
+              full_text: string;
               username: string;
               created_at_timestamp: number;
               tweet_type?: string;
               contains_question?: boolean;
+              extended_entities?: ExtendedEntities;
             };
             return {
-              text: payload.text,
               full_text: payload.full_text,
               distance: result.score,
               username: payload.username,
               date: payload.created_at_timestamp,
               id: result.id.toString(),
               tweet_type: payload.tweet_type,
-              contains_question: payload.contains_question || false
+              contains_question: payload.contains_question || false,
+              extended_entities: payload.extended_entities
             };
           });
 

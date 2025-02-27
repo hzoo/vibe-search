@@ -18,8 +18,23 @@ export function formatTweetDate(dateString: number) {
 
 // Convert text with URLs and usernames to HTML with links
 export function linkify(text: string) {
-  // First escape HTML
-  const escapedText = text.replace(
+  // Create a combined regex that captures both URLs and usernames
+  // The regex uses capturing groups to differentiate between URLs and usernames
+  const combinedRegex = /(https?:\/\/[^\s<]+)|(@\w+)/g;
+  
+  // First, replace URLs and usernames with placeholder tokens
+  // This prevents them from being affected by HTML escaping
+  const tokens: Record<string, string> = {};
+  let tokenCounter = 0;
+  
+  const tokenizedText = text.replace(combinedRegex, (match) => {
+    const token = `__TOKEN_${tokenCounter++}__`;
+    tokens[token] = match;
+    return token;
+  });
+  
+  // Now escape HTML in the remaining text
+  const escapedText = tokenizedText.replace(
     /[&<>"']/g,
     (char) =>
       ({
@@ -30,16 +45,19 @@ export function linkify(text: string) {
         "'": "&#039;",
       })[char]!,
   );
-
-  // Create a combined regex that captures both URLs and usernames
-  // The regex uses capturing groups to differentiate between URLs and usernames
-  const combinedRegex = /(https?:\/\/[^\s<]+)|(@\w+)/g;
   
-  // Replace both URLs and usernames in a single pass
-  return escapedText.replace(combinedRegex, (match, url, username) => {
-    // If url is defined, this match is a URL
-    if (url) {
-      const trimmedUrl = url.replace(/[.,;:]$/, "");
+  // Finally, replace tokens with their HTML link versions
+  return escapedText.replace(/__TOKEN_(\d+)__/g, (_, index) => {
+    const originalMatch = tokens[`__TOKEN_${index}__`];
+    
+    // Check if it's a URL
+    if (originalMatch.startsWith('http')) {
+      const trimmedUrl = originalMatch.replace(/[.,;:]$/, "");
+      
+      // Special handling for remaining t.co URLs
+      if (trimmedUrl.includes('t.co/')) {
+        return '';
+      }
       
       // Clean up the display text for the URL
       let displayUrl = trimmedUrl
@@ -57,16 +75,15 @@ export function linkify(text: string) {
       return `<a href="${trimmedUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${displayUrl}</a>`;
     }
     
-    // If username is defined and not part of a URL, this match is a username
-    // We know it's not part of a URL because the URL pattern would have matched first
-    if (username) {
+    // If it's a username
+    if (originalMatch.startsWith('@')) {
       // Extract just the username without the @ symbol
-      const usernameWithoutAt = username.substring(1);
-      return `<a href="https://x.com/${usernameWithoutAt}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${username}</a>`;
+      const usernameWithoutAt = originalMatch.substring(1);
+      return `<a href="https://x.com/${usernameWithoutAt}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${originalMatch}</a>`;
     }
     
     // This should never happen, but return the original match just in case
-    return match;
+    return originalMatch;
   });
 }
 
@@ -118,6 +135,6 @@ export function highlightText(text: string, query: string) {
 
   return linkedText.replace(
     regex,
-    '<mark class="bg-yellow-200 dark:bg-yellow-500 px-0.5 rounded">$1</mark>',
+    '<mark class="bg-yellow-200 dark:bg-yellow-500/80 px-0.5 rounded">$1</mark>',
   );
 } 

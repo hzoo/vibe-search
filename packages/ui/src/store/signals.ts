@@ -1,6 +1,7 @@
 import { computed, signal } from "@preact/signals";
 import { createClient } from "@supabase/supabase-js";
 import type { TwitterUser } from "@/ui/src/store/userCache";
+import type { ExtendedEntities } from "@/ui/src/components/Tweet";
 
 // Supabase setup with error handling for missing environment variables
 // Ensure to add the following to your .env file:
@@ -40,8 +41,7 @@ export const showFilters = signal<boolean>(false); // Toggle for filter panel vi
 // Search results
 export const results = signal<
   Array<{
-    text: string;
-    full_text?: string;
+    full_text: string;
     distance: number;
     username: string;
     date: number;
@@ -143,14 +143,14 @@ export function resetFilters() {
 
 // Define a type for search results from the API
 interface SearchResult {
-  text: string;
-  full_text?: string;
+  full_text: string;
   distance: number;
   username: string;
   date: string;
   id: string;
   tweet_type?: string;
   contains_question?: boolean;
+  extended_entities?: ExtendedEntities;
 }
 
 // Handle search
@@ -224,7 +224,8 @@ export const handleSearch = async () => {
     results.value = json.map((result: SearchResult) => ({
       ...result,
       id: result.id,
-      full_text: result.full_text || result.text
+      full_text: result.full_text,
+      extended_entities: result.extended_entities
     }));
     
     // After search, unfocus input and select first tweet

@@ -15,7 +15,8 @@
     "convert-archive": "bun run packages/server/convert-twitter-archive.ts"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.3"
+    "@types/bun": "^1.2.3",
+    "typescript": "^5.7.3"
   },
   "trustedDependencies": [
     "qdrant-local",

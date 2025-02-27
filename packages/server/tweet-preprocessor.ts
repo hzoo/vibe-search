@@ -208,9 +208,8 @@ export function cleanTweet(
  */
 export function processThread(
   tweets: Array<{ 
-    text: string; 
-    full_text?: string; 
-    entities?: TweetEntities 
+    full_text: string; 
+    entities: TweetEntities 
   }>, 
   options: TweetPreprocessingOptions = DEFAULT_PREPROCESSING_OPTIONS
 ): string {
@@ -218,13 +217,13 @@ export function processThread(
   
   // If we're not combining threads, just process the first tweet
   if (!options.combineThreads) {
-    const tweetText = tweets[0].full_text || tweets[0].text || '';
+    const tweetText = tweets[0].full_text;
     return cleanTweet(tweetText, options, tweets[0].entities);
   }
   
   // Process each tweet in the thread
   const cleanedTweets = tweets.map(tweet => {
-    const tweetText = tweet.full_text || tweet.text || '';
+    const tweetText = tweet.full_text;
     return cleanTweet(tweetText, options, tweet.entities);
   }).filter(Boolean); // Remove empty tweets
   

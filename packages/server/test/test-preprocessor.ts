@@ -73,9 +73,9 @@ function displayResults(
 	});
 
 	// Test thread processing
-	const threadTweets = tweets.slice(6).map((text) => ({ text }));
+	const threadTweets = tweets.slice(6).map((full_text) => ({ full_text, entities: {} }));
 	console.log(`\n--- Thread Processing ---`);
-	console.log(`Original Thread: ${threadTweets.map((t) => t.text).join("\n")}`);
+	console.log(`Original Thread: ${threadTweets.map((t) => t.full_text).join("\n")}`);
 	console.log(`Processed Thread: ${processThread(threadTweets, options)}`);
 }
 
@@ -112,7 +112,7 @@ if (import.meta.main) {
 			"  return tweets\n" +
 			"    .map(tweet => {\n" +
 			"      // Clean the tweet text\n" +
-			"      const cleanedText = cleanTweet(tweet.text, preprocessingOptions);\n" +
+			"      const cleanedText = cleanTweet(tweet.full_text, preprocessingOptions);\n" +
 			"      \n" +
 			"      // Skip invalid tweets\n" +
 			"      if (!cleanedText) return null;\n" +
