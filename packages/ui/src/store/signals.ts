@@ -1,4 +1,4 @@
-import { signal } from "@preact/signals";
+import { computed, signal } from "@preact/signals";
 import { createClient } from "@supabase/supabase-js";
 import type { TwitterUser } from "@/ui/src/store/userCache";
 
@@ -19,12 +19,13 @@ export const supabase = signal(createClient(supabaseUrl, supabaseKey));
 export const debugMode = signal(false);
 
 // API endpoints
-export const embeddingsUrl = "http://localhost:3001/api/search";
-export const importUrl = "http://localhost:3001/api/import";
-export const deleteEmbeddingsUrl = "http://localhost:3001/api/delete-embeddings";
+export const baseUrl = "http://localhost:3001";
+export const embeddingsUrl = `${baseUrl}/api/search`;
+export const importUrl = `${baseUrl}/api/import`;
+export const deleteEmbeddingsUrl = `${baseUrl}/api/delete-embeddings`;
 
 // Search related signals
-export const query = signal("love");
+export const query = signal("open source");
 export const selectedUser = signal<string>("");
 export const nResults = signal(10);
 
@@ -95,6 +96,16 @@ export const lastDialogOpenTime = signal<{ dialog: string; time: number } | null
 export const twitterUsers = signal<Partial<TwitterUser>[]>([]);
 export const twitterUsersLoading = signal(false);
 export const twitterUsersError = signal<string | null>(null);
+export const userSearchQuery = signal("");
+export const filteredUsers = computed(() => {
+  if (!userSearchQuery.value.trim()) return twitterUsers.value.slice(0, 25);
+  
+  const lowerQuery = userSearchQuery.value.toLowerCase().trim();
+  return twitterUsers.value.filter(user => 
+    user.username?.toLowerCase().includes(lowerQuery) || 
+    (user.account_display_name?.toLowerCase().includes(lowerQuery))
+  );
+});
 
 // Toggle dark mode
 export function toggleDarkMode() {

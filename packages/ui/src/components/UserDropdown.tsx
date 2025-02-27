@@ -1,9 +1,7 @@
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import type { Signal } from "@preact/signals";
-import { useSignalEffect } from "@preact/signals";
-import { twitterUsers, twitterUsersLoading } from "@/ui/src/store/signals";
-import { searchTwitterUsers } from "@/ui/src/store/userCache";
+import { twitterUsers, twitterUsersLoading, filteredUsers } from "@/ui/src/store/signals";
 import type { TwitterUser } from "@/ui/src/store/userCache";
 import type { JSX } from "preact";
 import { useRef } from "preact/hooks";
@@ -38,19 +36,9 @@ export function UserDropdown({
   placeholder = "Search users...",
   renderUser,
 }: UserDropdownProps) {
-  const filteredUsers = useSignal<TwitterUser[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Filter users when search query changes
-  useSignalEffect(() => {
-    if (searchQuery.value.trim()) {
-      // Type assertion to handle the Partial<TwitterUser>[] issue
-      filteredUsers.value = searchTwitterUsers(searchQuery.value) as TwitterUser[];
-    } else {
-      // Type assertion to handle the Partial<TwitterUser>[] issue
-      filteredUsers.value = twitterUsers.value.slice(0, 25) as TwitterUser[];
-    }
-  });
 
   // Focus input when dropdown opens
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { supabase, handleSearch, twitterUsers, twitterUsersLoading, twitterUsersError } from "@/ui/src/store/signals";
+import { supabase, handleSearch, twitterUsers, twitterUsersLoading, twitterUsersError, baseUrl } from "@/ui/src/store/signals";
 
 // Cache namespace
 export const CACHE_NAMESPACE = "vibe-search";
@@ -185,7 +185,7 @@ export async function getUserData(
 // Fetch profile data from local API
 async function fetchLocalProfile(username: string): Promise<LocalProfile | null> {
   try {
-    const response = await fetch(`/api/profile/${username}`);
+    const response = await fetch(`${baseUrl}/api/profile/${username}`);
     
     if (!response.ok) {
       if (response.status !== 404) {
@@ -194,11 +194,44 @@ async function fetchLocalProfile(username: string): Promise<LocalProfile | null>
       return null;
     }
     
-    return await response.json();
+    return response.json();
   } catch (error) {
     console.error("Error fetching local profile:", error);
     return null;
   }
+}
+
+/**
+ * Fetch and cache a user profile after import completion
+ * This ensures the profile is immediately available for display
+ */
+export async function fetchAndCacheUserProfile(username: string): Promise<TwitterUser | null> {
+  console.log(`Fetching and caching profile for ${username} after import`);
+  
+  // Force a fresh fetch by bypassing the cache
+  const profile = await getUserData({ username });
+  
+  if (profile) {
+    // Make sure the profile is added to the twitterUsers list if not already there
+    const existingUserIndex = twitterUsers.value.findIndex(u => u.username === username);
+    
+    if (existingUserIndex >= 0) {
+      // Update the existing user in the list
+      const updatedUsers = [...twitterUsers.value];
+      updatedUsers[existingUserIndex] = {
+        ...updatedUsers[existingUserIndex],
+        ...profile
+      };
+      twitterUsers.value = updatedUsers;
+    } else {
+      // Add the user to the list
+      twitterUsers.value = [profile, ...twitterUsers.value];
+    }
+    
+    return profile;
+  }
+  
+  return null;
 }
 
 // Fetch available local profiles
@@ -308,17 +341,6 @@ export async function fetchTwitterUsers(limit = 300, orderBy = "num_tweets") {
   } finally {
     twitterUsersLoading.value = false;
   }
-}
-
-// Search for Twitter users by username or display name
-export function searchTwitterUsers(query: string) {
-  if (!query.trim()) return twitterUsers.value;
-  
-  const lowerQuery = query.toLowerCase().trim();
-  return twitterUsers.value.filter(user => 
-    user.username?.toLowerCase().includes(lowerQuery) || 
-    (user.account_display_name?.toLowerCase().includes(lowerQuery))
-  );
 }
 
 // Clear all caches

@@ -4,7 +4,7 @@ import { useSignal } from "@preact/signals";
 import { useSignalEffect } from "@preact/signals";
 import { ProfileHoverCard } from "@/ui/src/components/ProfileHoverCard";
 import type { TwitterUser } from "@/ui/src/store/userCache";
-import { getUserData } from "@/ui/src/store/userCache";
+import { fetchLocalProfile, getUserData } from "@/ui/src/store/userCache";
 import { selectedTweetIndex, headerHeight, query, debugMode } from "@/ui/src/store/signals";
 import type { results } from "@/ui/src/store/signals";
 import { formatTweetDate, highlightText } from "@/ui/src/utils/textUtils";

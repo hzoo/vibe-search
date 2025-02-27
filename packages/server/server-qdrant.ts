@@ -146,6 +146,8 @@ async function getUserProfile(username: string): Promise<TwitterUserProfile | nu
   if (profileCache[username]) {
     return profileCache[username];
   }
+
+  console.log('username', username);
   
   // Try to load from file
   try {
@@ -166,6 +168,8 @@ async function getUserProfile(username: string): Promise<TwitterUserProfile | nu
     if (!profileFile) {
       return null;
     }
+
+    console.log('profileFile', profileFile);
     
     const profilePath = join(ARCHIVES_DIR, profileFile);
     const content = await Bun.file(profilePath).text();
@@ -269,6 +273,8 @@ const server = serve({
 
     // Get user profile endpoint
     if (req.url.includes("/api/profile/") && req.method === "GET") {
+      console.log('req.url', req.url);
+      
       try {
         const url = new URL(req.url);
         const username = url.pathname.split('/').pop();
@@ -530,8 +536,6 @@ const server = serve({
 
     // Import API endpoint
     if (req.url.includes("/api/import")) {
-      console.log("Import API endpoint hit:", req.url, req.method);
-      
       // Performance metrics endpoint - handle this first
       if (req.url.includes("/api/import/performance") && req.method === "GET") {
         try {
@@ -1165,8 +1169,7 @@ async function startRemoteImport(
               // If profile file exists, copy it to archives directory before deleting temp files
               if (existsSync(profilePath)) {
                 // Create a timestamp for the filename
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const archivesProfilePath = join(ARCHIVES_DIR, `${timestamp}_${profileFileName}`);
+                const archivesProfilePath = join(ARCHIVES_DIR, profileFileName);
                 
                 // Ensure archives directory exists
                 Bun.spawn(["mkdir", "-p", ARCHIVES_DIR]);

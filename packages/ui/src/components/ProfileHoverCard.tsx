@@ -8,6 +8,17 @@ interface ProfileHoverCardProps {
   onMouseLeave: () => void;
 }
 
+// Helper function to format numbers with k/m suffix
+function formatNumber(num: number): string {
+  if (num >= 1_000_000) {
+    return `${(num / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (num >= 1_000) {
+    return `${(num / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  }
+  return num.toString();
+}
+
 export function ProfileHoverCard({ 
   userData, 
   username, 
@@ -33,6 +44,27 @@ export function ProfileHoverCard({
             {userData.account_display_name}
           </div>
           <div class="text-gray-500 dark:text-gray-400">@{username}</div>
+          
+          {/* Stats row */}
+          {(userData.num_tweets > 0 || userData.num_followers > 0 || userData.num_following > 0) && (
+            <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {userData.num_tweets > 0 && (
+                <div>
+                  <span class="font-semibold text-gray-700 dark:text-gray-300">{formatNumber(userData.num_tweets)}</span> Tweets
+                </div>
+              )}
+              {userData.num_following > 0 && (
+                <div>
+                  <span class="font-semibold text-gray-700 dark:text-gray-300">{formatNumber(userData.num_following)}</span> Following
+                </div>
+              )}
+              {userData.num_followers > 0 && (
+                <div>
+                  <span class="font-semibold text-gray-700 dark:text-gray-300">{formatNumber(userData.num_followers)}</span> Followers
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
       {userData.bio && (

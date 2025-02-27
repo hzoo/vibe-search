@@ -13,6 +13,7 @@ import { saveArchive } from "@/ui/src/components/import-tweets/importSignals";
 import { ImportIcon, InfoIcon } from "@/ui/src/components/Icons";
 import { debounce } from "@/ui/src/utils";
 import { checkArchives, checkImportHistory, checkingArchives, existingArchives } from "@/ui/src/components/import-tweets/importSignals";
+import { fetchAndCacheUserProfile } from "@/ui/src/store/userCache";
 
 // Define the local import URL
 const localImportUrl = `${importUrl}/local`;
@@ -142,8 +143,6 @@ export function ImportFileMode() {
 					payload.username = customUsername.value.trim();
 				}
 				
-				console.log("Sending local import request:", payload);
-				
 				try {
 					const response = await fetch(localImportUrl, {
 						method: "POST",
@@ -164,8 +163,6 @@ export function ImportFileMode() {
 					}
 					
 					const data = await response.json();
-					console.log("Response data:", data);
-					
 					if (data.importId) {
 						// Start polling for status
 						pollImportStatus(data.importId);
@@ -370,6 +367,8 @@ export function ImportFileMode() {
 						// If we know the username, set it as the selected user
 						if (status.username && status.username !== "unknown") {
 							selectedUser.value = status.username;
+							// Fetch and cache the user profile immediately
+							await fetchAndCacheUserProfile(status.username);
 						}
 						handleSearch();
 					}

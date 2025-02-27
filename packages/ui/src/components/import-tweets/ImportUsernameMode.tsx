@@ -11,16 +11,19 @@ import {
 	handleSearch,
 	twitterUsers,
 	twitterUsersLoading,
+	filteredUsers,
+	userSearchQuery,
 } from "@/ui/src/store/signals";
 import { formatDate } from "@/ui/src/utils/textUtils";
 import {
 	fetchTwitterUsers,
-	searchTwitterUsers,
+	getUserData,
+	fetchAndCacheUserProfile
 } from "@/ui/src/store/userCache";
 import type { TwitterUser } from "@/ui/src/store/userCache";
 import { existingArchives, checkArchives, formatFileSize, checkImportHistory, usernameInput } from "@/ui/src/components/import-tweets/importSignals";
 import { saveArchive } from "@/ui/src/components/import-tweets/importSignals";
-import { SpinnerIcon, UserIcon, ChevronDownIcon, InfoIcon } from "@/ui/src/components/Icons";
+import { SpinnerIcon, ChevronDownIcon, InfoIcon } from "@/ui/src/components/Icons";
 import { signal } from "@preact/signals";
 
 interface ArchiveInfo {
@@ -52,23 +55,27 @@ async function fetchPerformanceMetrics() {
 	}
 }
 
+function handleSelectUser(username: string) {
+	selectedIndex.value = -1;
+	usernameInput.value = username;
+	showUserDropdown.value = false;
+	checkArchives(username);
+	checkImportHistory(username);
+	getUserData({ username });
+}
+
 function UserDropdownItem({ user, index }: { user: TwitterUser, index: number }) {
 	return (<button
 		key={user.username}
 		id={`user-item-${index}`}
 		className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center ${selectedIndex.value === index ? "bg-blue-50 dark:bg-blue-900/20 border-l-2 border-blue-500" : ""}`}
-		onClick={() => {
-			usernameInput.value = user.username;
-			showUserDropdown.value = false;
-			checkArchives(usernameInput.value);
-			checkImportHistory(usernameInput.value);
-		}}
+		onClick={() => handleSelectUser(user.username)}
 		aria-selected={
 			selectedIndex.value === index
 		}
 	>
 		<div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 mr-2 flex items-center justify-center overflow-hidden">
-			<UserIcon className="w-4 h-4 text-gray-500" />
+			<img src={user.photo || "/placeholder.png"} alt="" className="w-6 h-6 rounded-full" />
 		</div>
 		<div className="min-w-0 flex-1">
 			<div className="flex items-center">
@@ -96,58 +103,33 @@ const selectedIndex = signal(-1);
 const showUserDropdown = signal(false);
 
 export function ImportUsernameMode() {
-	const userSearchQuery = useSignal("");
-	const filteredUsers = useSignal<TwitterUser[]>([]);
 	const forceImport = useSignal(false);
 	const forceDownload = useSignal(false);
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	// Filter users when search query changes
-	useSignalEffect(() => {
-		if (userSearchQuery.value.trim()) {
-			filteredUsers.value = searchTwitterUsers(userSearchQuery.value) as TwitterUser[];
-		} else {
-			filteredUsers.value = twitterUsers.value.slice(0, 25) as TwitterUser[]; // Limit to first 25 users
-		}
-	});
-
 	// Fetch Twitter users when dropdown is opened
-	useEffect(() => {
+	useSignalEffect(() => {
 		if (showUserDropdown.value && twitterUsers.value.length === 0) {
 			fetchTwitterUsers();
 		}
 
 		// Reset selected index when dropdown opens/closes
 		selectedIndex.value = -1;
-	}, [showUserDropdown.value, selectedIndex]);
+	});
 
-	// Close dropdown when clicking outside
 	useEffect(() => {
-		// function handleClickOutside(e: MouseEvent) {
-		// 	const target = e.target as HTMLElement;
-		// 	if (
-		// 		!target.closest(".user-dropdown-container") &&
-		// 		!target.closest(".username-input")
-		// 	) {
-		// 		showUserDropdown.value = false;
-		// 	}
-		// }
-
 		// Close on escape key
 		function handleEscKey(e: KeyboardEvent) {
 			if (e.key === "Escape") {
 				showUserDropdown.value = false;
 			}
 		}
-
-		// document.addEventListener("mousedown", handleClickOutside);
 		document.addEventListener("keydown", handleEscKey);
 
 		return () => {
-			// document.removeEventListener("mousedown", handleClickOutside);
 			document.removeEventListener("keydown", handleEscKey);
 		};
-	}, [showUserDropdown]);
+	}, []);
 
 	const handleKeyDown = (e: KeyboardEvent) => {
 		if (!showUserDropdown.value) return;
@@ -173,10 +155,7 @@ export function ImportUsernameMode() {
 			// If there's only one user in the dropdown, select it regardless of selectedIndex
 			if (userCount === 1) {
 				usernameInput.value = filteredUsers.value[0].username;
-				showUserDropdown.value = false;
-				selectedIndex.value = -1;
-				checkArchives(usernameInput.value);
-				checkImportHistory(usernameInput.value);
+				handleSelectUser(usernameInput.value);
 				return;
 			}
 
@@ -185,8 +164,8 @@ export function ImportUsernameMode() {
 				const selectedUser = filteredUsers.value[selectedIndex.value];
 				if (selectedUser) {
 					usernameInput.value = selectedUser.username;
-					showUserDropdown.value = false;
-					selectedIndex.value = -1;
+					handleSelectUser(selectedUser.username);
+					return;
 				}
 			}
 		}
@@ -258,9 +237,11 @@ export function ImportUsernameMode() {
 					importLoading.value = false;
 					// If completed successfully, refresh search results
 					if (status.status === "completed") {
-						// If we know the username, set it as the selected user
+						// If we know the username, set it as the selected user and fetch profile
 						if (status.username && status.username !== "unknown") {
 							selectedUser.value = status.username;
+							// Fetch and cache the user profile immediately
+							await fetchAndCacheUserProfile(status.username);
 						}
 						handleSearch();
 					}
