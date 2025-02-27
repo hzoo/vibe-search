@@ -187,7 +187,7 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
   const imageLoaded = useSignal(false);
   const showDebug = useSignal(false);
   const activeTab = useSignal<'comparison' | 'json'>('comparison');
-  const tweetRef = useRef<HTMLAnchorElement>(null);
+  const tweetRef = useRef<HTMLElement>(null);
   const profileTimeoutRef = useRef<number | null>(null);
 
   // Use useEffect with proper dependency tracking
@@ -243,24 +243,16 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
   const formattedDate = formatTweetDate(result.date * 1000);
 
   return (
-    <a
+    <article
       ref={tweetRef}
-      href={tweetUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      class={`block p-4 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors ${
+      class={`block p-3 border-b border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50 transition-colors ${
         index === selectedTweetIndex.value
           ? 'bg-white [box-shadow:rgb(142,205,248)_0px_0px_0px_2px_inset] dark:bg-blue-900/20'
           : ''
-      } ${debugMode.value && showDebug.value ? 'relative' : ''}`}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          window.open(tweetUrl, '_blank');
-        }
-      }}
-      tabIndex={0}
+      } ${debugMode.value && showDebug.value ? 'relative' : ''} user-select-text`}
+      aria-label={`Tweet by ${result.username}`}
     >
-      <div class="flex gap-3">
+      <div class="flex gap-2">
         {/* Profile Image */}
         <div class="flex-shrink-0 relative">
           <div
@@ -268,13 +260,13 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
             onMouseLeave={handleProfileMouseLeave}
           >
             {!imageLoaded.value && (
-              <div class="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
+              <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
             )}
             <img
               src={userData.value?.photo || "/placeholder.png"}
               alt=""
               onLoad={() => imageLoaded.value = true}
-              class={`w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer ${!imageLoaded.value ? 'hidden' : ''}`}
+              class={`w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer ${!imageLoaded.value ? 'hidden' : ''}`}
             />
             {showProfile.value && (
               <ProfileHoverCard 
@@ -289,13 +281,45 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
 
         {/* Tweet Content */}
         <div class="flex-1 min-w-0">
-          {/* Tweet Header */}
-          <TweetHeader 
-            userData={userData.value} 
-            username={result.username} 
-            formattedDate={formattedDate}
-            distance={result.distance}
-          />
+          {/* Tweet Header with integrated link */}
+          <div class="flex items-center gap-1 mb-0.5">
+            <div class="flex-1 min-w-0">
+              <a
+                href={`https://x.com/${result.username}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span class="font-bold text-gray-900 dark:text-gray-100">
+                  {userData.value?.account_display_name || result.username}
+                </span>
+                <span class="text-gray-500 dark:text-gray-400 text-sm">
+                  {" "}
+                  @{result.username}
+                </span>
+              </a>
+              <span class="text-gray-500 dark:text-gray-400 text-sm">
+                {" "}
+                · {formattedDate}
+              </span>
+              <a
+                href={tweetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                class="ml-1 inline-flex items-center text-gray-400 hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400"
+                title="View on X"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3">
+                  <path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clip-rule="evenodd" />
+                </svg>
+              </a>
+            </div>
+            <span class="text-gray-500 dark:text-gray-400 text-xs shrink-0">
+              {result.distance.toFixed(3)}
+            </span>
+          </div>
 
           {/* Tweet Text */}
           <TweetContent 
@@ -305,7 +329,7 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
 
           {/* Debug View (inline) */}
           {debugMode.value && showDebug.value && (
-            <div class="mt-3 px-4 border-t border-gray-200 dark:border-gray-700 pt-2 bg-gray-50 dark:bg-gray-800/50">
+            <div class="mt-2 px-3 border-t border-gray-200 dark:border-gray-700 pt-2 bg-gray-50 dark:bg-gray-800/50">
               <div class="flex justify-between items-center mb-2">
                 <div class="flex items-center gap-2">
                   <DebugTabs 
@@ -339,6 +363,6 @@ export const Tweet = memo(({ result, index }: TweetProps) => {
           )}
         </div>
       </div>
-    </a>
+    </article>
   );
 }); 
