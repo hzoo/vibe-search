@@ -5,7 +5,7 @@ import {
 	processThread,
 	isValidTweet,
 	type TweetPreprocessingOptions,
-} from "./tweet-preprocessor";
+} from "../tweet-preprocessor";
 
 // Sample tweets to test preprocessing
 const sampleTweets = [

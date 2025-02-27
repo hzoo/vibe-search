@@ -1,5 +1,5 @@
 import { currentDialog, deleteAllEmbeddings, deleteLoading } from "@/ui/src/store/signals";
-import { isMinimized } from "@/ui/src/components/import-tweets/ImportDialog";
+import { isMinimized } from "@/ui/src/components/import-tweets/importSignals";
 import { ImportIcon, MinimizeMaximizeIcon, TrashIcon, CloseIcon } from "@/ui/src/components/Icons";
 
 export function ImportTweetsHeader() {

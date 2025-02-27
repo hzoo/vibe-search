@@ -3,9 +3,10 @@ import { QdrantExtended } from "qdrant-local";
 import { pipeline } from '@xenova/transformers';
 import { serve } from "bun";
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { randomUUIDv7 } from "bun";
 import { cleanTweet, type TweetPreprocessingOptions } from "./tweet-preprocessor";
+import { processArchive } from "./convert-twitter-archive";
 
 // Import history path
 const IMPORT_HISTORY_PATH = join(import.meta.dir, "import-history.json");
@@ -119,6 +120,99 @@ interface SearchParams {
   }
 }
 
+// Define the profile data type
+interface TwitterUserProfile {
+  username: string;
+  account_display_name?: string;
+  account_id?: string;
+  photo?: string;
+  bio?: string;
+  website?: string;
+  location?: string;
+  num_tweets: number;
+  num_followers: number;
+  num_following: number;
+  cached_at: number;
+}
+
+// Cache for profile data
+const profileCache: Record<string, TwitterUserProfile> = {};
+
+/**
+ * Get user profile data from local file
+ */
+async function getUserProfile(username: string): Promise<TwitterUserProfile | null> {
+  // Check cache first
+  if (profileCache[username]) {
+    return profileCache[username];
+  }
+  
+  // Try to load from file
+  try {
+    if (!existsSync(ARCHIVES_DIR)) {
+      return null;
+    }
+    
+    const files = readdirSync(ARCHIVES_DIR);
+    
+    // Look for profile files that match the username, handling date prefixes
+    // Format could be either username-profile.json or date_username-profile.json
+    const profileFile = files.find(file => {
+      // Match either exact username-profile.json or date_username-profile.json pattern
+      return (file === `${username.toLowerCase()}-profile.json`) || 
+             (file.endsWith(`${username.toLowerCase()}-profile.json`) && file.includes('_'));
+    });
+    
+    if (!profileFile) {
+      return null;
+    }
+    
+    const profilePath = join(ARCHIVES_DIR, profileFile);
+    const content = await Bun.file(profilePath).text();
+    const profileData = JSON.parse(content) as TwitterUserProfile;
+    
+    // Cache the profile data
+    profileCache[username] = profileData;
+    
+    return profileData;
+  } catch (error) {
+    console.error(`Error loading profile for ${username}:`, error);
+    return null;
+  }
+}
+
+/**
+ * List all available profiles
+ */
+async function listProfiles(): Promise<string[]> {
+  if (!existsSync(ARCHIVES_DIR)) {
+    return [];
+  }
+  
+  try {
+    const files = readdirSync(ARCHIVES_DIR);
+    
+    // Filter for profile JSON files
+    const profileFiles = files.filter(file => file.endsWith("-profile.json"));
+    
+    // Extract usernames from filenames, handling date prefixes
+    return profileFiles.map(file => {
+      // Remove the -profile.json suffix
+      const withoutSuffix = file.replace(/-profile\.json$/, "");
+      
+      // If there's a date prefix (contains underscore), extract just the username part
+      if (withoutSuffix.includes('_')) {
+        return withoutSuffix.split('_').pop() || withoutSuffix;
+      }
+      
+      return withoutSuffix;
+    });
+  } catch (error) {
+    console.error("Error listing profiles:", error);
+    return [];
+  }
+}
+
 // Import progress tracking
 const importStatus = new Map<string, {
   id: string;
@@ -134,6 +228,7 @@ const importStatus = new Map<string, {
     tweetsPerSecond: number;
     averageChunkTweetsPerSecond: number;
   };
+  message?: string;
 }>();
 
 // Initialize the embedding model
@@ -145,7 +240,8 @@ const client = new QdrantExtended({ url: "http://localhost:6333" });
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Content-Length",
+  "Access-Control-Max-Age": "86400",
 };
 
 // Health check endpoint
@@ -154,7 +250,11 @@ const healthResponse = Response.json({ status: "ok" }, { headers: corsHeaders })
 const server = serve({
   port: 3001,
   development: true,
+  maxRequestBodySize: 1024 * 1024 * 1024, // 1GB max upload size
   async fetch(req) {
+    // debug logs
+    console.log(req.url, req.method);
+
     // Handle CORS preflight
     if (req.method === "OPTIONS") {
       return new Response(null, {
@@ -165,6 +265,52 @@ const server = serve({
     // Health check endpoint
     if (req.url.includes("/health")) {
       return healthResponse;
+    }
+
+    // Get user profile endpoint
+    if (req.url.includes("/api/profile/") && req.method === "GET") {
+      try {
+        const url = new URL(req.url);
+        const username = url.pathname.split('/').pop();
+        
+        if (!username) {
+          return Response.json(
+            { error: "Username is required" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+        
+        const profile = await getUserProfile(username);
+        
+        if (!profile) {
+          return Response.json(
+            { error: "Profile not found" },
+            { status: 404, headers: corsHeaders }
+          );
+        }
+        
+        return Response.json(profile, { headers: corsHeaders });
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+        return Response.json(
+          { error: "Failed to fetch profile" },
+          { status: 500, headers: corsHeaders }
+        );
+      }
+    }
+
+    // List available profiles endpoint
+    if (req.url.includes("/api/profiles") && req.method === "GET") {
+      try {
+        const profiles = await listProfiles();
+        return Response.json({ profiles }, { headers: corsHeaders });
+      } catch (error) {
+        console.error("Error listing profiles:", error);
+        return Response.json(
+          { error: "Failed to list profiles" },
+          { status: 500, headers: corsHeaders }
+        );
+      }
     }
 
     // Delete all embeddings endpoint
@@ -384,6 +530,8 @@ const server = serve({
 
     // Import API endpoint
     if (req.url.includes("/api/import")) {
+      console.log("Import API endpoint hit:", req.url, req.method);
+      
       // Performance metrics endpoint - handle this first
       if (req.url.includes("/api/import/performance") && req.method === "GET") {
         try {
@@ -475,7 +623,7 @@ const server = serve({
           const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username}/archive.json`;
           
           // Start the import process for remote file
-          startRemoteImport(importId, archiveUrl, username, force, saveArchive, forceDownload);
+          startRemoteImport(importId, archiveUrl, username, force, saveArchive, false);
           
           return Response.json({ 
             success: true, 
@@ -486,6 +634,87 @@ const server = serve({
           console.error("Import error:", error);
           return Response.json(
             { error: "Import failed" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+      }
+      
+      // Handle local file import via JSON payload
+      if (req.url.includes("/api/import/local") && req.method === "POST") {
+        console.log("Processing local file import request");
+        try {
+          const data = await req.json();
+          const { filePath, username, force = false, saveArchive = false, isTwitterArchive = false } = data;
+          
+          if (!filePath) {
+            return Response.json(
+              { error: "File path is required" },
+              { status: 400, headers: corsHeaders }
+            );
+          }
+          
+          console.log("Local file import request:", {
+            filePath,
+            username,
+            force,
+            saveArchive,
+            isTwitterArchive
+          });
+          
+          // Check if file exists
+          if (!existsSync(filePath)) {
+            return Response.json(
+              { error: `File not found at path: ${filePath}` },
+              { status: 404, headers: corsHeaders }
+            );
+          }
+          
+          const importId = randomUUIDv7();
+          
+          // Handle Twitter archive zip file
+          if (isTwitterArchive && filePath.toLowerCase().endsWith('.zip')) {
+            console.log("Processing local Twitter archive zip file...");
+            // Create a temporary username if not provided
+            const archiveUsername = username || `user_${Date.now()}`;
+            
+            // Update import status
+            importStatus.set(importId, {
+              id: importId,
+              username: archiveUsername,
+              status: "processing",
+              progress: 0,
+              total: 100,
+              startTime: Date.now(),
+              message: "Processing Twitter archive zip file..."
+            });
+            
+            // Process the archive in the background
+            processTwitterArchive(importId, filePath, archiveUsername, force, saveArchive);
+            
+            console.log("Twitter archive import started with ID:", importId);
+            return Response.json({ 
+              success: true, 
+              importId,
+              message: "Twitter archive import started" 
+            }, { headers: corsHeaders });
+          }
+          
+          // Handle regular JSON file
+          console.log("Processing local JSON file...");
+          
+          // Start the import process directly
+          startImport(importId, filePath, force, saveArchive);
+          
+          console.log("JSON import started with ID:", importId);
+          return Response.json({ 
+            success: true, 
+            importId,
+            message: "Import started" 
+          }, { headers: corsHeaders });
+        } catch (error) {
+          console.error("Local file import error:", error);
+          return Response.json(
+            { error: `Import failed: ${error instanceof Error ? error.message : String(error)}` },
             { status: 500, headers: corsHeaders }
           );
         }
@@ -516,28 +745,113 @@ const server = serve({
       
       // Handle regular form data upload
       if (req.method === "POST") {
+        console.log("Processing POST request to /api/import");
         try {
+          console.log("Attempting to parse form data...");
           const formData = await req.formData();
+          console.log("Form data parsed successfully");
+          
           const file = formData.get("file") as File | null;
           const username = formData.get("username") as string | null;
           const force = formData.get("force") === "true";
           const saveArchive = formData.get("saveArchive") === "true";
+          const isTwitterArchive = formData.get("isTwitterArchive") === "true";
+          
+          console.log("Form data contents:", {
+            hasFile: !!file,
+            fileName: file?.name,
+            fileSize: file?.size,
+            username,
+            force,
+            saveArchive,
+            isTwitterArchive
+          });
           
           // Handle file upload
           if (file) {
+            console.log("Processing file upload...");
             const importId = randomUUIDv7();
+            
+            // Handle Twitter archive zip file
+            if (isTwitterArchive && file.name.toLowerCase().endsWith('.zip')) {
+              console.log("Processing Twitter archive zip file...");
+              // Create a temporary username if not provided
+              const archiveUsername = username || `user_${Date.now()}`;
+              
+              // Ensure archives directory exists
+              try {
+                await Bun.spawn(["mkdir", "-p", ARCHIVES_DIR]);
+                console.log("Archives directory created/verified");
+              } catch (mkdirError) {
+                console.error("Error creating archives directory:", mkdirError);
+                throw new Error(`Failed to create archives directory: ${mkdirError}`);
+              }
+              
+              // Save the uploaded zip file
+              const zipPath = join(ARCHIVES_DIR, `${archiveUsername}.zip`);
+              console.log(`Saving zip file to ${zipPath}...`);
+              
+              try {
+                const buffer = await file.arrayBuffer();
+                console.log(`Got file buffer, size: ${buffer.byteLength} bytes`);
+                await Bun.write(zipPath, buffer);
+                console.log("Zip file saved successfully");
+              } catch (writeError) {
+                console.error("Error writing zip file:", writeError);
+                throw new Error(`Failed to save zip file: ${writeError}`);
+              }
+              
+              // Update import status
+              importStatus.set(importId, {
+                id: importId,
+                username: archiveUsername,
+                status: "processing",
+                progress: 0,
+                total: 100,
+                startTime: Date.now(),
+                message: "Processing Twitter archive zip file..."
+              });
+              
+              // Process the archive in the background
+              processTwitterArchive(importId, zipPath, archiveUsername, force, saveArchive);
+              
+              console.log("Twitter archive import started with ID:", importId);
+              return Response.json({ 
+                success: true, 
+                importId,
+                message: "Twitter archive import started" 
+              }, { headers: corsHeaders });
+            }
+            
+            // Handle regular JSON file upload
+            console.log("Processing regular JSON file upload...");
             const tempPath = join(import.meta.dir, "temp", `${importId}.json`);
             
             // Ensure temp directory exists
-            await Bun.spawn(["mkdir", "-p", join(import.meta.dir, "temp")]);
+            try {
+              await Bun.spawn(["mkdir", "-p", join(import.meta.dir, "temp")]);
+              console.log("Temp directory created/verified");
+            } catch (mkdirError) {
+              console.error("Error creating temp directory:", mkdirError);
+              throw new Error(`Failed to create temp directory: ${mkdirError}`);
+            }
             
             // Save the uploaded file
-            const buffer = await file.arrayBuffer();
-            await Bun.write(tempPath, buffer);
+            console.log(`Saving JSON file to ${tempPath}...`);
+            try {
+              const buffer = await file.arrayBuffer();
+              console.log(`Got file buffer, size: ${buffer.byteLength} bytes`);
+              await Bun.write(tempPath, buffer);
+              console.log("JSON file saved successfully");
+            } catch (writeError) {
+              console.error("Error writing JSON file:", writeError);
+              throw new Error(`Failed to save JSON file: ${writeError}`);
+            }
             
             // Start the import process
             startImport(importId, tempPath, force, saveArchive);
             
+            console.log("JSON import started with ID:", importId);
             return Response.json({ 
               success: true, 
               importId,
@@ -551,7 +865,7 @@ const server = serve({
             const archiveUrl = `https://fabxmporizzqflnftavs.supabase.co/storage/v1/object/public/archives/${username}/archive.json`;
             
             // Start the import process for remote file
-            startRemoteImport(importId, archiveUrl, username, force, saveArchive);
+            startRemoteImport(importId, archiveUrl, username, force, saveArchive, false);
             
             return Response.json({ 
               success: true, 
@@ -565,9 +879,9 @@ const server = serve({
             { status: 400, headers: corsHeaders }
           );
         } catch (error) {
-          console.error("Import error:", error);
+          console.error("Import error details:", error);
           return Response.json(
-            { error: "Import failed" },
+            { error: `Import failed: ${error instanceof Error ? error.message : String(error)}` },
             { status: 500, headers: corsHeaders }
           );
         }
@@ -657,6 +971,31 @@ function startImport(importId: string, filePath: string, force = false, saveArch
         // Clean up temp file if not saving or if saving was successful
         if (!saveArchive || status.archivePath) {
           try {
+            // Check if there's a profile file in the same directory that we need to preserve
+            const tempDir = dirname(filePath);
+            const tempFileName = basename(filePath);
+            const username = result.username?.toLowerCase();
+            
+            if (username) {
+              const profileFileName = `${username}-profile.json`;
+              const profilePath = join(tempDir, profileFileName);
+              
+              // If profile file exists, copy it to archives directory before deleting temp files
+              if (existsSync(profilePath)) {
+                // Create a timestamp for the filename
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const archivesProfilePath = join(ARCHIVES_DIR, `${timestamp}_${profileFileName}`);
+                
+                // Ensure archives directory exists
+                Bun.spawn(["mkdir", "-p", ARCHIVES_DIR]);
+                
+                // Copy profile file to archives directory
+                Bun.spawn(["cp", profilePath, archivesProfilePath]);
+                console.log(`Preserved profile file: ${archivesProfilePath}`);
+              }
+            }
+            
+            // Now remove the temp file
             Bun.spawn(["rm", filePath]);
           } catch (e) {
             console.error("Failed to remove temp file:", e);
@@ -719,45 +1058,54 @@ async function startRemoteImport(
       startTime: Date.now()
     });
     
-    // Update status to processing
+    // Check if we already have archives for this username
+    const archives = checkArchivesForUsername(username);
+    
+    // Use existing archive if available and not forcing download
+    if (archives.exists && !forceDownload) {
+      console.log(`Using existing archive for ${username}`);
+      
+      // Get the most recent archive
+      const mostRecentArchive = archives.archives[0];
+      const archivePath = join(ARCHIVES_DIR, mostRecentArchive.filename);
+      
+      // Start the import process with the existing archive
+      startImport(importId, archivePath, force, false); // Don't save again
+      return;
+    }
+    
+    // Update status to downloading
     const status = importStatus.get(importId)!;
     status.status = "processing";
+    status.progress = 5;
+    status.message = "Downloading archive...";
     importStatus.set(importId, status);
     
-    // Check if we have a local archive for this username
-    const archives = checkArchivesForUsername(username);
-    let tempPath = "";
+    // Create temp directory if it doesn't exist
+    const tempDir = join(import.meta.dir, "temp");
+    Bun.spawn(["mkdir", "-p", tempDir]);
     
-    if (archives.exists && archives.archives.length > 0 && !forceDownload) {
-      console.log(`Found local archive for ${username}, using most recent one`);
-      // Use the most recent archive (they're already sorted by date)
-      const mostRecentArchive = archives.archives[0];
-      tempPath = join(ARCHIVES_DIR, mostRecentArchive.filename);
-      
-      console.log(`Using local archive: ${tempPath}`);
-    } else {
-      // No local archive or force download requested
-      const downloadReason = forceDownload ? "force download requested" : "no local archive found";
-      console.log(`${downloadReason} for ${username}, downloading from ${url}`);
-      
-      // Download the file
+    // Download the file
+    const tempPath = join(tempDir, `${importId}.json`);
+    
+    try {
       const response = await fetch(url);
-      
       if (!response.ok) {
         throw new Error(`Failed to download archive: ${response.status} ${response.statusText}`);
       }
       
-      // Save to temp file
-      tempPath = join(import.meta.dir, "temp", `${importId}.json`);
-      
-      // Ensure temp directory exists
-      Bun.spawn(["mkdir", "-p", join(import.meta.dir, "temp")]);
-      
-      // Save the downloaded file
       const buffer = await response.arrayBuffer();
       await Bun.write(tempPath, buffer);
       
+      // Update status
+      status.progress = 10;
+      status.message = "Download complete, starting import...";
+      importStatus.set(importId, status);
+      
       console.log(`Downloaded archive to ${tempPath}`);
+    } catch (error) {
+      console.error("Failed to download archive:", error);
+      throw error;
     }
     
     // Start the import process directly using the library
@@ -806,6 +1154,30 @@ async function startRemoteImport(
         // Clean up temp file if not saving or if saving was successful or if we used an existing archive
         if ((!saveArchive || status.archivePath) && (forceDownload || !archives.exists)) {
           try {
+            // Check if there's a profile file in the same directory that we need to preserve
+            const tempDir = dirname(tempPath);
+            const username = result.username?.toLowerCase() || status.username.toLowerCase();
+            
+            if (username) {
+              const profileFileName = `${username}-profile.json`;
+              const profilePath = join(tempDir, profileFileName);
+              
+              // If profile file exists, copy it to archives directory before deleting temp files
+              if (existsSync(profilePath)) {
+                // Create a timestamp for the filename
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const archivesProfilePath = join(ARCHIVES_DIR, `${timestamp}_${profileFileName}`);
+                
+                // Ensure archives directory exists
+                Bun.spawn(["mkdir", "-p", ARCHIVES_DIR]);
+                
+                // Copy profile file to archives directory
+                Bun.spawn(["cp", profilePath, archivesProfilePath]);
+                console.log(`Preserved profile file: ${archivesProfilePath}`);
+              }
+            }
+            
+            // Now remove the temp file
             Bun.spawn(["rm", tempPath]);
           } catch (e) {
             console.error("Failed to remove temp file:", e);
@@ -851,7 +1223,7 @@ async function startRemoteImport(
 // Function to save archive file to permanent storage
 async function saveArchiveFile(tempPath: string, username: string): Promise<string> {
   // Ensure archives directory exists
-  await Bun.spawn(["mkdir", "-p", ARCHIVES_DIR]);
+  Bun.spawn(["mkdir", "-p", ARCHIVES_DIR]);
   
   // Create a filename with timestamp to avoid overwriting
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -859,10 +1231,65 @@ async function saveArchiveFile(tempPath: string, username: string): Promise<stri
   const archivePath = join(ARCHIVES_DIR, filename);
   
   // Copy the file
-  await Bun.spawn(["cp", tempPath, archivePath]);
+  Bun.spawn(["cp", tempPath, archivePath]);
   
   console.log(`Saved archive for ${username} to ${archivePath}`);
   return archivePath;
+}
+
+// Function to process a Twitter archive zip file
+async function processTwitterArchive(
+  importId: string,
+  zipPath: string,
+  username: string,
+  force = false,
+  saveArchive = false
+): Promise<void> {
+  try {
+    // Update status to processing
+    const status = importStatus.get(importId)!;
+    status.status = "processing";
+    status.progress = 10;
+    importStatus.set(importId, status);
+    
+    try {
+      // Process the archive to convert it to JSON
+      const jsonPath = await processArchive(zipPath, username);
+      
+      // Update status
+      status.progress = 50;
+      status.message = "Archive converted to JSON, starting import...";
+      importStatus.set(importId, status);
+      
+      // Start the import process with the converted JSON
+      startImport(importId, jsonPath, force, saveArchive);
+
+      // Clean up the zip file
+      Bun.spawn(["rm", zipPath]);
+    } catch (error) {
+      // Update status with error
+      status.status = "failed";
+      status.error = String(error);
+      status.endTime = Date.now();
+      importStatus.set(importId, status);
+      
+      console.error("Failed to process Twitter archive:", error);
+    }
+  } catch (error) {
+    console.error("Failed to start Twitter archive import:", error);
+    
+    // Update status with error
+    importStatus.set(importId, {
+      id: importId,
+      username,
+      status: "failed",
+      progress: 0,
+      total: 0,
+      error: String(error),
+      startTime: Date.now(),
+      endTime: Date.now()
+    });
+  }
 }
 
 console.log(`Server is running on http://localhost:${server.port}`);

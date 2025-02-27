@@ -3,8 +3,10 @@
     "scripts": {
         "qdrant": "bun run qdrant.ts",
         "dev:qdrant": "bun run server-qdrant.ts",
-        "test:qdrant": "bun run test-embeddings-qdrant.ts",
-        "import:qdrant": "bun run import-tweets-qdrant.ts"
+        "test:qdrant": "bun run test/test-embeddings-qdrant.ts",
+        "import:qdrant": "bun run import-tweets-qdrant.ts",
+        "convert": "bun convert-twitter-archive.ts convert",
+        "verify": "bun convert-twitter-archive.ts verify"
     },
     "dependencies": {
         "@qdrant/js-client-rest": "^1.13.0",

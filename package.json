@@ -11,7 +11,8 @@
     "qdrant": "bun --filter=server run qdrant",
     "dev:qdrant": "bun --filter=server run dev:qdrant",
     "import:qdrant": "bun --filter=server run import:qdrant",
-    "test:qdrant": "bun --filter=server run test:qdrant"
+    "test:qdrant": "bun --filter=server run test:qdrant",
+    "convert-archive": "bun run packages/server/convert-twitter-archive.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.2.3"

@@ -1,141 +1,72 @@
 import { useEffect } from "preact/hooks";
-import { effect, signal, useSignal } from "@preact/signals";
+import { effect, useSignal } from "@preact/signals";
 import { useSignalEffect } from "@preact/signals";
 import {
 	currentDialog,
-	importUrl,
 	importLoading,
 	importError,
 	importStatus,
 	importHistory,
 	twitterUsers,
 } from "@/ui/src/store/signals";
-import { debounce } from "@/ui/src/utils";
-import {
-	fetchTwitterUsers,
-} from "@/ui/src/store/userCache";
+import { fetchTwitterUsers } from "@/ui/src/store/userCache";
 import { ImportTweetsHeader } from "@/ui/src/components/import-tweets/ImportTweetsHeader";
 import { ImportTweetsStatus } from "@/ui/src/components/import-tweets/ImportTweetsStatus";
 import { ImportUsernameMode } from "@/ui/src/components/import-tweets/ImportUsernameMode";
 import { ImportFileMode } from "@/ui/src/components/import-tweets/ImportFileMode";
-
-// Interface for archive information
-interface ArchiveInfo {
-	filename: string;
-	size: number;
-	created: string;
-}
-
-export interface ArchivesResponse {
-	exists: boolean;
-	archives: ArchiveInfo[];
-}
-
-export async function checkImportHistory(username: string) {
-	try {
-		const response = await fetch(
-			`${importUrl}/history?username=${encodeURIComponent(username)}`,
-		);
-
-		if (response.ok) {
-			const data = await response.json();
-			if (data.lastImportDate) {
-				importHistory.value = data;
-			} else {
-				importHistory.value = null;
-			}
-		} else {
-			importHistory.value = null;
-		}
-	} catch (err) {
-		console.error("Error checking import history:", err);
-		importHistory.value = null;
-	}
-}
-
-// Function to check if archives exist for a username
-export async function checkArchives(
-	username: string,
-): Promise<ArchivesResponse | null> {
-	try {
-		const response = await fetch(
-			`${importUrl.replace("/import", "/archives")}?username=${encodeURIComponent(username)}`,
-		);
-
-		if (response.ok) {
-			return await response.json();
-		}
-	} catch (err) {
-		console.error("Error checking archives:", err);
-	}
-	return null;
-}
-
-export const existingArchives = signal<ArchivesResponse | null>(null);
-export const isMinimized = signal(false);
-
-export const debouncedChecks = debounce(async (username: string) => {
-	await checkImportHistory(username);
-}, 600);
-
-// Helper function to format file size
-export function formatFileSize(bytes: number): string {
-	if (bytes === 0) return "0 Bytes";
-
-	const k = 1024;
-	const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-	const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-	return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
-}
+import { usernameInput, isMinimized } from "@/ui/src/components/import-tweets/importSignals";
 
 function ImportTweetsLoadingStatusBar() {
 	// Add signals for tracking time and performance
 	const elapsedTime = useSignal(0);
 	const estimatedTimeRemaining = useSignal(0);
 	const processingRate = useSignal(0);
-	
+
 	// Update elapsed time and estimates every second
 	useEffect(() => {
-		if (!importStatus.value || importStatus.value.status !== "processing") return;
-		
+		if (!importStatus.value || importStatus.value.status !== "processing")
+			return;
+
 		// Calculate initial elapsed time
 		const startTime = importStatus.value.startTime;
 		elapsedTime.value = Math.floor((Date.now() - startTime) / 1000);
-		
+
 		const interval = setInterval(() => {
 			// Update elapsed time
 			if (!importStatus.value) return;
-			
+
 			elapsedTime.value = Math.floor((Date.now() - startTime) / 1000);
-			
+
 			// Calculate processing rate (tweets per second)
 			if (elapsedTime.value > 0 && importStatus.value) {
 				processingRate.value = importStatus.value.progress / elapsedTime.value;
 			}
-			
+
 			// Calculate estimated time remaining
 			if (processingRate.value > 0 && importStatus.value) {
-				const remainingTweets = importStatus.value.total - importStatus.value.progress;
-				estimatedTimeRemaining.value = Math.floor(remainingTweets / processingRate.value);
+				const remainingTweets =
+					importStatus.value.total - importStatus.value.progress;
+				estimatedTimeRemaining.value = Math.floor(
+					remainingTweets / processingRate.value,
+				);
 			}
 		}, 1000);
-		
+
 		return () => clearInterval(interval);
-	// eslint-disable-next-line react-hooks/exhaustive-deps
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [importStatus.value, elapsedTime, estimatedTimeRemaining, processingRate]);
-	
+
 	// Format time as mm:ss or hh:mm:ss
 	const formatTime = (secondsInput: number) => {
 		const seconds = secondsInput < 0 ? 0 : secondsInput;
 		const hours = Math.floor(seconds / 3600);
 		const minutes = Math.floor((seconds % 3600) / 60);
 		const secs = seconds % 60;
-		
+
 		if (hours > 0) {
-			return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+			return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 		}
-		return `${minutes}:${secs.toString().padStart(2, '0')}`;
+		return `${minutes}:${secs.toString().padStart(2, "0")}`;
 	};
 
 	if (
@@ -144,10 +75,11 @@ function ImportTweetsLoadingStatusBar() {
 		importStatus.value?.status === "processing"
 	) {
 		// Calculate progress percentage
-		const progressPercent = importStatus.value.total > 0 
-			? (importStatus.value.progress / importStatus.value.total) * 100 
-			: 0;
-			
+		const progressPercent =
+			importStatus.value.total > 0
+				? (importStatus.value.progress / importStatus.value.total) * 100
+				: 0;
+
 		return (
 			<div className="p-2">
 				<div className="space-y-1">
@@ -166,16 +98,16 @@ function ImportTweetsLoadingStatusBar() {
 						</span>
 						<span>
 							{processingRate.value > 0 && (
-								<>
-									{processingRate.value.toFixed(1)} tweets/sec
-								</>
+								<>{processingRate.value.toFixed(1)} tweets/sec</>
 							)}
 						</span>
 					</div>
 					<div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
 						<span>Elapsed: {formatTime(elapsedTime.value)}</span>
 						{estimatedTimeRemaining.value > 0 && (
-							<span>Remaining: ~{formatTime(estimatedTimeRemaining.value)}</span>
+							<span>
+								Remaining: ~{formatTime(estimatedTimeRemaining.value)}
+							</span>
 						)}
 					</div>
 				</div>
@@ -195,7 +127,6 @@ effect(() => {
 export function ImportDialog() {
 	if (currentDialog.value !== "import") return null;
 
-	const usernameInput = useSignal("");
 	const importMode = useSignal<"username" | "file">("username");
 	const showUserDropdown = useSignal(false);
 
@@ -204,11 +135,10 @@ export function ImportDialog() {
 		// Don't check if username is empty
 		if (!usernameInput.value.trim()) {
 			importHistory.value = null;
-			existingArchives.value = null;
 			return;
 		}
 
-		debouncedChecks(usernameInput.value.trim());
+		// debouncedChecks(usernameInput.value.trim());
 	});
 
 	// Handle keyboard navigation in dropdown
@@ -287,11 +217,9 @@ export function ImportDialog() {
 								</div>
 
 								{importMode.value === "username" ? (
-									<ImportUsernameMode 
-										usernameInput={usernameInput} 
-									/>
+									<ImportUsernameMode/>
 								) : (
-									<ImportFileMode/>
+									<ImportFileMode />
 								)}
 
 								{importError.value && (

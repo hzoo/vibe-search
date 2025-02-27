@@ -14,9 +14,9 @@ export type TwitterUser = {
   location?: string;
   loadedAt: number;
   accountId: string;
-  num_tweets?: number;
-  num_followers?: number;
-  num_following?: number;
+  num_tweets: number;
+  num_followers: number;
+  num_following: number;
   cached_at?: number;
 };
 
@@ -35,6 +35,21 @@ export const CACHE_KEY = `${CACHE_NAMESPACE}::users`;
 export const CACHE_METADATA_KEY = `${CACHE_NAMESPACE}::metadata`;
 export const USER_CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days
 export const USERS_LIST_CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
+
+// Define the local profile type
+export type LocalProfile = {
+  username: string;
+  account_display_name?: string;
+  account_id?: string;
+  photo?: string;
+  bio?: string;
+  website?: string;
+  location?: string;
+  num_tweets: number;
+  num_followers: number;
+  num_following: number;
+  cached_at: number;
+};
 
 // Load cache from localStorage
 export function loadCache(): UserCache {
@@ -100,32 +115,58 @@ export async function getUserData(
         .eq("username", result.username)
         .single();
 
-    if (!account) {
-      console.error("Account not found for username:", result.username);
-      return null;
+    if (account) {
+      // Then get profile data using account_id
+      const { data: profile } = await supabase.value
+        .from("profile")
+        .select("avatar_media_url, bio, website, location")
+        .eq("account_id", account.account_id)
+        .single();
+
+      if (profile) {
+        // Start with existing cached data if available
+        const existingData = cached || {};
+        
+        const userData: TwitterUser = {
+          ...existingData,
+          username: result.username,
+          account_display_name: account.account_display_name || result.username,
+          photo: profile.avatar_media_url,
+          bio: profile.bio,
+          website: profile.website,
+          location: profile.location,
+          loadedAt: now,
+          accountId: account.account_id,
+        };
+
+        // Update cache in memory and localStorage
+        userCache = { ...userCache, [result.username]: userData };
+        saveCache(userCache);
+
+        return userData;
+      }
     }
-
-    // Then get profile data using account_id
-    const { data: profile } = await supabase.value
-      .from("profile")
-      .select("avatar_media_url, bio, website, location")
-      .eq("account_id", account.account_id)
-      .single();
-
-    if (profile) {
+    
+    // If not found in Supabase, try to get from local API
+    const localProfile = await fetchLocalProfile(result.username);
+    
+    if (localProfile) {
       // Start with existing cached data if available
       const existingData = cached || {};
       
       const userData: TwitterUser = {
         ...existingData,
-        username: result.username,
-        account_display_name: account.account_display_name || result.username,
-        photo: profile.avatar_media_url,
-        bio: profile.bio,
-        website: profile.website,
-        location: profile.location,
+        username: localProfile.username,
+        account_display_name: localProfile.account_display_name || localProfile.username,
+        photo: localProfile.photo,
+        bio: localProfile.bio,
+        website: localProfile.website,
+        location: localProfile.location,
         loadedAt: now,
-        accountId: account.account_id,
+        accountId: localProfile.account_id || '',
+        num_tweets: localProfile.num_tweets,
+        num_followers: localProfile.num_followers,
+        num_following: localProfile.num_following,
       };
 
       // Update cache in memory and localStorage
@@ -141,8 +182,45 @@ export async function getUserData(
   return null;
 }
 
+// Fetch profile data from local API
+async function fetchLocalProfile(username: string): Promise<LocalProfile | null> {
+  try {
+    const response = await fetch(`/api/profile/${username}`);
+    
+    if (!response.ok) {
+      if (response.status !== 404) {
+        console.error(`Error fetching local profile: ${response.statusText}`);
+      }
+      return null;
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching local profile:", error);
+    return null;
+  }
+}
+
+// Fetch available local profiles
+export async function fetchLocalProfiles(): Promise<string[]> {
+  try {
+    const response = await fetch('/api/profiles');
+    
+    if (!response.ok) {
+      console.error(`Error fetching local profiles: ${response.statusText}`);
+      return [];
+    }
+    
+    const data = await response.json();
+    return data.profiles || [];
+  } catch (error) {
+    console.error("Error fetching local profiles:", error);
+    return [];
+  }
+}
+
 // Fetch Twitter users from Supabase
-export async function fetchTwitterUsers(limit = 300, orderBy = "num_tweets", ascending = false) {
+export async function fetchTwitterUsers(limit = 300, orderBy = "num_tweets") {
   const now = Date.now();
   const metadata = loadCacheMetadata();
   
@@ -150,15 +228,7 @@ export async function fetchTwitterUsers(limit = 300, orderBy = "num_tweets", asc
   if (now - metadata.lastFullFetch < USERS_LIST_CACHE_TTL) {
     // If we have cached users, use them
     const cachedUsers = Object.values(userCache)
-      .filter(user => user.num_tweets !== undefined)
-      .map(user => ({
-        username: user.username,
-        account_display_name: user.account_display_name,
-        account_id: user.account_id,
-        num_tweets: user.num_tweets,
-        num_followers: user.num_followers,
-        num_following: user.num_following
-      }));
+      .sort((a, b) => b.num_tweets - a.num_tweets);
       
     if (cachedUsers.length > 0) {
       twitterUsers.value = cachedUsers;
@@ -170,32 +240,52 @@ export async function fetchTwitterUsers(limit = 300, orderBy = "num_tweets", asc
   twitterUsersError.value = null;
   
   try {
+    // First try to get users from Supabase
     const { data, error } = await supabase.value
       .from("account")
       .select("account_id, username, account_display_name, num_tweets, num_followers, num_following")
-      .order(orderBy, { ascending })
+      .order(orderBy, { ascending: false })
       .limit(limit);
     
     if (error) throw error;
     
-    if (data && data.length > 0) {
+    let users = data || [];
+    
+    // Then try to get local profiles
+    const localProfiles = await fetchLocalProfiles();
+    
+    // For each local profile, fetch the full profile data
+    for (const username of localProfiles) {
+      // Skip if already in the list
+      if (users.some(u => u.username === username)) continue;
+      
+      const profile = await fetchLocalProfile(username);
+      if (profile) {
+        users.push({
+          account_id: profile.account_id || '',
+          username: profile.username,
+          account_display_name: profile.account_display_name || profile.username,
+          num_tweets: profile.num_tweets,
+          num_followers: profile.num_followers,
+          num_following: profile.num_following
+        });
+      }
+    }
+    
+    if (users.length > 0) {
+      // Sort by tweet count
+      users = users.sort((a, b) => b.num_tweets - a.num_tweets);
+      
       // Update twitterUsers signal
-      twitterUsers.value = data;
+      twitterUsers.value = users;
       
       // Update cache with user data
       const now = Date.now();
-      data.forEach(user => {
+      users.forEach(user => {
         // Merge with existing data if available
         const existingData = userCache[user.username] || {};
-        
         userCache[user.username] = {
           ...existingData,
-          username: user.username,
-          account_display_name: user.account_display_name,
-          account_id: user.account_id,
-          num_tweets: user.num_tweets,
-          num_followers: user.num_followers,
-          num_following: user.num_following,
           loadedAt: existingData.loadedAt || now
         };
       });
@@ -207,7 +297,7 @@ export async function fetchTwitterUsers(limit = 300, orderBy = "num_tweets", asc
       cacheMetadata.lastFullFetch = now;
       saveCacheMetadata(cacheMetadata);
       
-      return data;
+      return users;
     }
     
     return [];

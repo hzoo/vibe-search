@@ -18,7 +18,7 @@ import {
 	searchTwitterUsers,
 } from "@/ui/src/store/userCache";
 import type { TwitterUser } from "@/ui/src/store/userCache";
-import { existingArchives, checkArchives, formatFileSize, type ArchivesResponse } from "./ImportDialog";
+import { existingArchives, checkArchives, formatFileSize, checkImportHistory, usernameInput } from "@/ui/src/components/import-tweets/importSignals";
 import { saveArchive } from "@/ui/src/components/import-tweets/importSignals";
 import { SpinnerIcon, UserIcon, ChevronDownIcon, InfoIcon } from "@/ui/src/components/Icons";
 import { signal } from "@preact/signals";
@@ -27,10 +27,6 @@ interface ArchiveInfo {
 	filename: string;
 	size: number;
 	created: string;
-}
-
-interface ImportUsernameModeProps {
-	usernameInput: { value: string };
 }
 
 // Add a signal to store the performance metrics
@@ -56,13 +52,52 @@ async function fetchPerformanceMetrics() {
 	}
 }
 
-export function ImportUsernameMode({ 
-	usernameInput, 
-}: ImportUsernameModeProps) {
-	const showUserDropdown = useSignal(false);
+function UserDropdownItem({ user, index }: { user: TwitterUser, index: number }) {
+	return (<button
+		key={user.username}
+		id={`user-item-${index}`}
+		className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center ${selectedIndex.value === index ? "bg-blue-50 dark:bg-blue-900/20 border-l-2 border-blue-500" : ""}`}
+		onClick={() => {
+			usernameInput.value = user.username;
+			showUserDropdown.value = false;
+			checkArchives(usernameInput.value);
+			checkImportHistory(usernameInput.value);
+		}}
+		aria-selected={
+			selectedIndex.value === index
+		}
+	>
+		<div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 mr-2 flex items-center justify-center overflow-hidden">
+			<UserIcon className="w-4 h-4 text-gray-500" />
+		</div>
+		<div className="min-w-0 flex-1">
+			<div className="flex items-center">
+				<span className="font-medium truncate">
+					{user.account_display_name ||
+						user.username}
+				</span>
+				<span className="ml-1 text-gray-500 dark:text-gray-400 truncate">
+					@{user.username}
+				</span>
+			</div>
+			{user.num_tweets && (
+				<div className="text-xs text-gray-500 dark:text-gray-400">
+					{user.num_tweets.toLocaleString()}{" "}
+					tweets (
+					{user.num_followers?.toLocaleString() || 0}{" "}
+					followers)
+				</div>
+			)}
+		</div>
+	</button>)
+}
+
+const selectedIndex = signal(-1);
+const showUserDropdown = signal(false);
+
+export function ImportUsernameMode() {
 	const userSearchQuery = useSignal("");
 	const filteredUsers = useSignal<TwitterUser[]>([]);
-	const selectedIndex = useSignal(-1);
 	const forceImport = useSignal(false);
 	const forceDownload = useSignal(false);
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -88,15 +123,15 @@ export function ImportUsernameMode({
 
 	// Close dropdown when clicking outside
 	useEffect(() => {
-		function handleClickOutside(e: MouseEvent) {
-			const target = e.target as HTMLElement;
-			if (
-				!target.closest(".user-dropdown-container") &&
-				!target.closest(".username-input")
-			) {
-				showUserDropdown.value = false;
-			}
-		}
+		// function handleClickOutside(e: MouseEvent) {
+		// 	const target = e.target as HTMLElement;
+		// 	if (
+		// 		!target.closest(".user-dropdown-container") &&
+		// 		!target.closest(".username-input")
+		// 	) {
+		// 		showUserDropdown.value = false;
+		// 	}
+		// }
 
 		// Close on escape key
 		function handleEscKey(e: KeyboardEvent) {
@@ -105,11 +140,11 @@ export function ImportUsernameMode({
 			}
 		}
 
-		document.addEventListener("mousedown", handleClickOutside);
+		// document.addEventListener("mousedown", handleClickOutside);
 		document.addEventListener("keydown", handleEscKey);
 
 		return () => {
-			document.removeEventListener("mousedown", handleClickOutside);
+			// document.removeEventListener("mousedown", handleClickOutside);
 			document.removeEventListener("keydown", handleEscKey);
 		};
 	}, [showUserDropdown]);
@@ -140,9 +175,8 @@ export function ImportUsernameMode({
 				usernameInput.value = filteredUsers.value[0].username;
 				showUserDropdown.value = false;
 				selectedIndex.value = -1;
-				checkArchives(usernameInput.value.trim()).then((archives: ArchivesResponse | null) => {
-					existingArchives.value = archives;
-				});
+				checkArchives(usernameInput.value);
+				checkImportHistory(usernameInput.value);
 				return;
 			}
 
@@ -254,20 +288,6 @@ export function ImportUsernameMode({
 		fetchPerformanceMetrics();
 	}, []);
 
-	// Reset forceDownload when username changes
-	useEffect(() => {
-		// Reset force download when username changes
-		forceDownload.value = false;
-		
-		// Check for archives when username changes
-		if (usernameInput.value.trim()) {
-			checkArchives(usernameInput.value.trim());
-		} else {
-			existingArchives.value = null;
-		}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [usernameInput.value, forceDownload]); // Added forceDownload to fix linter error
-
 	return (
 		<div className="space-y-3">
 			<div>
@@ -293,44 +313,7 @@ export function ImportUsernameMode({
 									</div>
 								) : filteredUsers.value.length > 0 ? (
 									filteredUsers.value.map((user, index) => (
-										<button
-											key={user.username}
-											id={`user-item-${index}`}
-											className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center ${selectedIndex.value === index ? "bg-blue-50 dark:bg-blue-900/20 border-l-2 border-blue-500" : ""}`}
-											onClick={() => {
-												usernameInput.value = user.username;
-												showUserDropdown.value = false;
-												checkArchives(usernameInput.value.trim()).then((archives: ArchivesResponse | null) => {
-													existingArchives.value = archives;
-												});
-											}}
-											aria-selected={
-												selectedIndex.value === index
-											}
-										>
-											<div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 mr-2 flex items-center justify-center overflow-hidden">
-												<UserIcon className="w-4 h-4 text-gray-500" />
-											</div>
-											<div className="min-w-0 flex-1">
-												<div className="flex items-center">
-													<span className="font-medium truncate">
-														{user.account_display_name ||
-															user.username}
-													</span>
-													<span className="ml-1 text-gray-500 dark:text-gray-400 truncate">
-														@{user.username}
-													</span>
-												</div>
-												{user.num_tweets && (
-													<div className="text-xs text-gray-500 dark:text-gray-400">
-														{user.num_tweets.toLocaleString()}{" "}
-														tweets (
-														{user.num_followers?.toLocaleString() || 0}{" "}
-														followers)
-													</div>
-												)}
-											</div>
-										</button>
+										<UserDropdownItem key={user.username} user={user} index={index} />
 									))
 								) : userSearchQuery.value ? (
 									<div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
